@@ -1,0 +1,4 @@
+coldshot/coldshot.so
+*.egg-info
+build
+.eric4project
