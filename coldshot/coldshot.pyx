@@ -1,4 +1,5 @@
-"""Coldshot, a Hotshot replacement in Cython"""
+"""Coldshot, a Hotshot-like profiler implementation in Cython
+"""
 from cpython cimport PY_LONG_LONG
 import urllib 
 
@@ -13,6 +14,7 @@ cdef extern from "stdio.h":
     int fflush(FILE *fp)
 
 cdef extern from 'Python.h':
+    # TODO: need to add c-call and c-return..
     int PyTrace_C_CALL
     int PyTrace_C_RETURN
     int PyTrace_CALL
@@ -46,10 +48,17 @@ cdef extern from 'lowlevel.h':
     void coldshot_unset_trace()
     void coldshot_unset_profile()
 
+__all__ = [
+    'timer',
+    'RECORD_STRUCTURE',
+    'Profiler',
+]
+    
 def timer():
     return hpTimer()
 
 cdef class Writer:
+    """Implements direct-to-file writing for the Profiler class"""
     cdef FILE * fd
     cdef FILE * index
     cdef int version
@@ -82,23 +91,25 @@ cdef class Writer:
     cdef write_short( self, int out, FILE * which ):
         # assumes little-endian!
         written = fwrite( &out, 2, 1, which )
+        if written != 1:
+            raise IOError( "Unable to write to output file" )
     cdef write_int( self, int out, FILE * which ):
         # assumes little-endian!
         written = fwrite( &out, 4, 1, which )
         if written != 1:
-            raise RuntimeError( "Unable to write to output file" )
+            raise IOError( "Unable to write to output file" )
         
     cdef write_ll( self, PY_LONG_LONG out, FILE * which ):
         written = fwrite( &out, self.long_long_size, 1, which )
         if written != 1:
-            raise RuntimeError( "Unable to write to output file" )
+            raise IOError( "Unable to write to output file" )
     cdef write_string( self, object out, FILE * which ):
         if isinstance( out, unicode ):
             out = out.encode( 'utf-8' )
         cdef char * temp = out 
         written = fwrite( temp, len(out), 1, which  )
         if written != 1:
-            raise RuntimeError( "Unable to write to output file" )
+            raise IOError( "Unable to write to output file" )
     
     cdef clean_name( self, str name ):
         return urllib.quote( name )
@@ -106,12 +117,10 @@ cdef class Writer:
     def prefix( self ):
         return self.write_prefix()
     cdef write_prefix( self ):
-        message = b'COLDSHOT Binary v%s\n'%( self.version, )
+        message = b'P COLDSHOTBinary v%s '%( self.version, )
         self.write_string( message, self.index)
         self.write_ll( 1, self.index )
         self.write_string( '\n', self.index )
-        self.write_int( self.int_size, self.index)
-        self.write_string( '\n' , self.index)
     
     def file( self, int fileno, str filename ):
         return self.write_file( fileno, filename )
@@ -129,20 +138,23 @@ cdef class Writer:
     def call( self, fileno, lineno, ts ):
         return self.write_call( fileno, lineno, ts )
     cdef write_call( self, int fileno, int lineno, PY_LONG_LONG ts ):
+        self.write_string( 'c', self.fd )
         self.write_short( fileno, self.fd )
         self.write_short( lineno, self.fd )
         self.write_ll( ts, self.fd )
     
-    def return_( self, ts ):
-        return self.write_return( ts )
-    cdef write_return( self, PY_LONG_LONG ts ):
-        self.write_short( 0, self.fd )
-        self.write_short( 0, self.fd )
+    def return_( self, fileno, lineno, ts ):
+        return self.write_return( fileno, lineno, ts )
+    cdef write_return( self, int fileno, int lineno, PY_LONG_LONG ts ):
+        self.write_string( 'r', self.fd )
+        self.write_short( fileno, self.fd )
+        self.write_short( lineno, self.fd )
         self.write_ll( ts, self.fd )
     
     def line( self, lineno, ts ):
         return self.write_line( lineno, ts )
     cdef write_line( self, int lineno, PY_LONG_LONG ts ):
+        self.write_string( 'l', self.fd )
         self.write_short( 0, self.fd )
         self.write_short( lineno, self.fd )
         self.write_ll( ts, self.fd )
@@ -164,10 +176,19 @@ cdef class Writer:
 # Numpy structure describing the format written to disk for this 
 # version of the profiler...
 RECORD_STRUCTURE = [
-    ('fileno','<i2'),('lineno','<i2'),('timestamp','<L')
+    ('rectype','b1'),('fileno','<i2'),('lineno','<i2'),('timestamp','<L')
 ]
         
 cdef class Profiler:
+    """Coldshot Profiler implementation 
+    
+    >>> import coldshot
+    >>> p = coldshot.Profiler( 'test.profile' )
+    >>> p.filename
+    'test.profile'
+    >>> p.index_filename
+    'test.profile.index'
+    """
     cdef dict files
     cdef int next_file
     cdef set functions
@@ -204,7 +225,10 @@ cdef class Profiler:
         self.discount()
     cdef write_return( self, PyFrameObject frame ):
         ts = self.delta()
-        self.writer.write_return( ts )
+        code = frame.f_code[0]
+        fileno = self.file_to_number( code )
+        lineno = code.co_firstlineno
+        self.writer.write_return( fileno, lineno, ts )
         self.discount()
     cdef write_line( self, PyFrameObject frame ):
         ts = self.delta()
@@ -257,13 +281,10 @@ cdef int trace_callback(
 ):
     cdef Profiler profiler = <Profiler>self
     if what == PyTrace_LINE:
-        print 'line'
         profiler.write_line( frame[0] )
     elif what == PyTrace_CALL:
-        print 'call'
         profiler.write_call( frame[0] )
     elif what == PyTrace_RETURN:
-        print 'return'
         profiler.write_return( frame[0] )
     profiler.discount()
     return 0

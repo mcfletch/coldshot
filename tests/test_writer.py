@@ -19,7 +19,7 @@ class TestWriter( TestCase ):
         self.writer.prefix( )
         self.writer.close()
         # TODO: make test 32-bit and big-endian friendly...
-        self.assert_index_written( u'COLDSHOT Binary v1\n\x01\x00\x00\x00\x00\x00\x00\x00\n\x08\x00\x00\x00\n' )
+        self.assert_index_written( u'P COLDSHOTBinary v1 \x01\x00\x00\x00\x00\x00\x00\x00\n' )
     
     def test_file( self ):
         self.writer.file( 23, 'Boo hoo' )
@@ -32,12 +32,12 @@ class TestWriter( TestCase ):
     def test_call( self ):
         self.writer.call( 1, 1, 1 )
         self.writer.close()
-        self.assert_was_written( '\x01\x00\x01\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
+        self.assert_was_written( 'c\x01\x00\x01\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
     def test_return( self ):
-        self.writer.return_( 1 )
+        self.writer.return_( 1,2, 1 )
         self.writer.close()
-        self.assert_was_written( u'\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
+        self.assert_was_written( u'r\x01\x00\x02\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
     def test_line( self ):
         self.writer.line( 25, 1 )
         self.writer.close()
-        self.assert_was_written( u'\x00\x00\x19\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
+        self.assert_was_written( u'l\x00\x00\x19\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
