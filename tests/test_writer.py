@@ -1,36 +1,43 @@
 from unittest import TestCase
-from coldshot.coldshot import Writer,TestWrite
+from coldshot.coldshot import Writer
 
 class TestWriter( TestCase ):
+    TEST_FILE = '.test.profile'
+    INDEX_FILE = TEST_FILE + '.index'
     def setUp( self ):
-        self.output = []
-        self.writer = Writer( self.output.append, 1 )
+        self.writer = Writer( self.TEST_FILE, 1 )
     def assert_was_written( self, *expected ):
-        expected = list( expected )
-        assert self.output == expected, (expected, self.output)
+        return self._base_was_written( self.TEST_FILE, expected )
+    def assert_index_written( self, *expected ):
+        return self._base_was_written( self.INDEX_FILE, expected )
+    def _base_was_written( self, filename, expected ):
+        output = open( filename ).read()
+        expected = ''.join( expected )
+        output = output.decode( 'latin-1' )
+        assert output == expected, (expected, output)
     def test_prefix( self ):
         self.writer.prefix( )
-        self.assert_was_written( 'COLDSHOT ASCII v1\n' )
+        self.writer.close()
+        # TODO: make test 32-bit and big-endian friendly...
+        self.assert_index_written( u'COLDSHOT Binary v1\n\x01\x00\x00\x00\x00\x00\x00\x00\n\x08\x00\x00\x00\n' )
+    
     def test_file( self ):
         self.writer.file( 23, 'Boo hoo' )
-        self.assert_was_written( 'F 23 Boo%20hoo\n' )
+        self.writer.close()
+        self.assert_index_written( 'F 23 Boo%20hoo\n' )
     def test_func( self ):
         self.writer.func( 23, 25, 'funcname' )
-        self.assert_was_written( 'f 23 25 funcname\n' )
+        self.writer.close()
+        self.assert_index_written( 'f 23 25 funcname\n' )
     def test_call( self ):
-        self.writer.call( 23, 25, 233344433344 )
-        self.assert_was_written( 'C 23 25 233344433344\n' )
+        self.writer.call( 1, 1, 1 )
+        self.writer.close()
+        self.assert_was_written( '\x01\x00\x01\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
     def test_return( self ):
-        self.writer.return_( 233344433388 )
-        self.assert_was_written( 'R 233344433388\n' )
+        self.writer.return_( 1 )
+        self.writer.close()
+        self.assert_was_written( u'\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
     def test_line( self ):
-        self.writer.line( 25, 233344433390 )
-        self.assert_was_written( 'L 233344433390\n' )
-    def test_test_writer( self ):
-        w = TestWrite( 'test.txt' )
-        w.test_write( )
-        w.close()
-        content = open( 'test.txt' ).read()
-        import struct
-        print struct.unpack( '<Q', content )
-    
+        self.writer.line( 25, 1 )
+        self.writer.close()
+        self.assert_was_written( u'\x00\x00\x19\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
