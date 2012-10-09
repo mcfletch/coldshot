@@ -26,7 +26,9 @@ extensions = [
             [
                 os.path.join( 'coldshot','coldshot.c' ),
                 os.path.join('coldshot','coldshot.pyx')
-            ][bool( have_cython )]
+            ][bool( have_cython )],
+            os.path.join( 'coldshot', 'lowlevel.c' ),
+            os.path.join( 'coldshot', 'timers.c' ),
         ],
         include = ['coldshot'],
         depends=['python.pxd']

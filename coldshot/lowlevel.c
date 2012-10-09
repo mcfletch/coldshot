@@ -8,3 +8,7 @@ void coldshot_set_trace( void * callback, PyObject * arg ) {
 void coldshot_unset_trace() {
     PyEval_SetTrace(NULL, NULL);
 }
+
+void * format_long_long(PY_LONG_LONG * to_encode) {
+    return to_encode;
+}
