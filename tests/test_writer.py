@@ -30,14 +30,14 @@ class TestWriter( TestCase ):
         self.writer.close()
         self.assert_index_written( 'f 23 25 funcname\n' )
     def test_call( self ):
-        self.writer.call( 1, 1, 1 )
+        self.writer.call( 2, 1, 1, 1 )
         self.writer.close()
-        self.assert_was_written( 'c\x01\x00\x01\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
+        self.assert_was_written( 'c\x02\x00\x00\x00\x01\x00\x01\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
     def test_return( self ):
-        self.writer.return_( 1,2, 1 )
+        self.writer.return_( 2, 1,2, 1 )
         self.writer.close()
-        self.assert_was_written( u'r\x01\x00\x02\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
+        self.assert_was_written( u'r\x02\x00\x00\x00\x01\x00\x02\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
     def test_line( self ):
-        self.writer.line( 25, 1 )
+        self.writer.line( 2, 25, 1 )
         self.writer.close()
-        self.assert_was_written( u'l\x00\x00\x19\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
+        self.assert_was_written( u'l\x02\x00\x00\x00\x00\x00\x19\x00\x01\x00\x00\x00\x00\x00\x00\x00' )

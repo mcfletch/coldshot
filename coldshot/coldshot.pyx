@@ -93,13 +93,13 @@ cdef class Writer:
         written = fwrite( &out, 2, 1, which )
         if written != 1:
             raise IOError( "Unable to write to output file" )
-    cdef write_int( self, int out, FILE * which ):
+    cdef write_long( self, long out, FILE * which ):
         # assumes little-endian!
         written = fwrite( &out, 4, 1, which )
         if written != 1:
             raise IOError( "Unable to write to output file" )
         
-    cdef write_ll( self, PY_LONG_LONG out, FILE * which ):
+    cdef write_long_long( self, PY_LONG_LONG out, FILE * which ):
         written = fwrite( &out, self.long_long_size, 1, which )
         if written != 1:
             raise IOError( "Unable to write to output file" )
@@ -119,7 +119,7 @@ cdef class Writer:
     cdef write_prefix( self ):
         message = b'P COLDSHOTBinary v%s '%( self.version, )
         self.write_string( message, self.index)
-        self.write_ll( 1, self.index )
+        self.write_long_long( 1, self.index )
         self.write_string( '\n', self.index )
     
     def file( self, int fileno, str filename ):
@@ -135,29 +135,32 @@ cdef class Writer:
             self.index
         )
     
-    def call( self, fileno, lineno, ts ):
-        return self.write_call( fileno, lineno, ts )
-    cdef write_call( self, int fileno, int lineno, PY_LONG_LONG ts ):
+    def call( self, threadno, fileno, lineno, ts ):
+        return self.write_call( threadno, fileno, lineno, ts )
+    cdef write_call( self, long threadno, int fileno, int lineno, PY_LONG_LONG ts ):
         self.write_string( 'c', self.fd )
+        self.write_long( threadno, self.fd )
         self.write_short( fileno, self.fd )
         self.write_short( lineno, self.fd )
-        self.write_ll( ts, self.fd )
+        self.write_long_long( ts, self.fd )
     
-    def return_( self, fileno, lineno, ts ):
-        return self.write_return( fileno, lineno, ts )
-    cdef write_return( self, int fileno, int lineno, PY_LONG_LONG ts ):
+    def return_( self, threadno, fileno, lineno, ts ):
+        return self.write_return( threadno, fileno, lineno, ts )
+    cdef write_return( self, long threadno, int fileno, int lineno, PY_LONG_LONG ts ):
         self.write_string( 'r', self.fd )
+        self.write_long( threadno, self.fd )
         self.write_short( fileno, self.fd )
         self.write_short( lineno, self.fd )
-        self.write_ll( ts, self.fd )
+        self.write_long_long( ts, self.fd )
     
-    def line( self, lineno, ts ):
-        return self.write_line( lineno, ts )
-    cdef write_line( self, int lineno, PY_LONG_LONG ts ):
+    def line( self, threadno, lineno, ts ):
+        return self.write_line( threadno, lineno, ts )
+    cdef write_line( self, long threadno, int lineno, PY_LONG_LONG ts ):
         self.write_string( 'l', self.fd )
+        self.write_long( threadno, self.fd )
         self.write_short( 0, self.fd )
         self.write_short( lineno, self.fd )
-        self.write_ll( ts, self.fd )
+        self.write_long_long( ts, self.fd )
     
     def flush( self ):
         fflush( self.fd )
@@ -176,9 +179,9 @@ cdef class Writer:
 # Numpy structure describing the format written to disk for this 
 # version of the profiler...
 RECORD_STRUCTURE = [
-    ('rectype','b1'),('fileno','<i2'),('lineno','<i2'),('timestamp','<L')
+    ('rectype','b1'),('thread','i4'),('fileno','<i2'),('lineno','<i2'),('timestamp','<L')
 ]
-        
+
 cdef class Profiler:
     """Coldshot Profiler implementation 
     
@@ -210,10 +213,11 @@ cdef class Profiler:
         self.next_file += 1
         self.writer.write_file( result, filename )
         return result 
+    cdef thread_id( self, PyFrameObject frame ):
+        return frame.f_tstate.thread_id
         
-    cdef write_call( self, PyFrameObject frame ):
+    cdef write_call( self, PY_LONG_LONG ts, PyFrameObject frame ):
         cdef PyCodeObject code
-        ts = self.delta()
         code = frame.f_code[0]
         fileno = self.file_to_number( code )
         lineno = code.co_firstlineno
@@ -221,22 +225,23 @@ cdef class Profiler:
         if key not in self.functions:
             self.functions.add( key )
             self.writer.write_func( fileno, lineno, <object>(code.co_name) )
-        self.writer.write_call( fileno, lineno, ts)
-        self.discount()
-    cdef write_return( self, PyFrameObject frame ):
-        ts = self.delta()
+        self.writer.write_call( self.thread_id( frame ), fileno, lineno, ts)
+    cdef write_return( self, PY_LONG_LONG ts, PyFrameObject frame ):
         code = frame.f_code[0]
         fileno = self.file_to_number( code )
         lineno = code.co_firstlineno
-        self.writer.write_return( fileno, lineno, ts )
-        self.discount()
-    cdef write_line( self, PyFrameObject frame ):
-        ts = self.delta()
-        self.writer.write_line( frame.f_lineno, ts )
-        self.discount()
+        self.writer.write_return( self.thread_id( frame ), fileno, lineno, ts )
+    cdef write_line( self, PY_LONG_LONG ts, PyFrameObject frame ):
+        self.writer.write_line( self.thread_id( frame ), frame.f_lineno, ts )
     
     cdef delta( self ):
-        """Calculate the delta since the last call to hpTimer(), store new value"""
+        """Calculate the delta since the last call to hpTimer(), store new value
+        
+        TODO: this discounting needs to be per-thread, but that isn't quite right 
+        either, as there is very different behaviour if the other thread is GIL-free 
+        versus GIL-locked (if it's locked, we should discount, otherwise we should 
+        not).
+        """
         cdef PY_LONG_LONG current
         cdef PY_LONG_LONG delta
         current = hpTimer()
@@ -280,11 +285,12 @@ cdef int trace_callback(
     object arg
 ):
     cdef Profiler profiler = <Profiler>self
+    ts = profiler.delta()
     if what == PyTrace_LINE:
-        profiler.write_line( frame[0] )
+        profiler.write_line( ts, frame[0] )
     elif what == PyTrace_CALL:
-        profiler.write_call( frame[0] )
+        profiler.write_call( ts, frame[0] )
     elif what == PyTrace_RETURN:
-        profiler.write_return( frame[0] )
+        profiler.write_return( ts, frame[0] )
     profiler.discount()
     return 0
