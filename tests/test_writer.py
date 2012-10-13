@@ -1,15 +1,23 @@
 from unittest import TestCase
 from coldshot.coldshot import Writer
+import tempfile, shutil
 
 class TestWriter( TestCase ):
-    TEST_FILE = '.test.profile'
-    INDEX_FILE = TEST_FILE + '.index'
     def setUp( self ):
-        self.writer = Writer( self.TEST_FILE, 1 )
-    def assert_was_written( self, *expected ):
-        return self._base_was_written( self.TEST_FILE, expected )
+        self.test_dir = tempfile.mkdtemp( prefix = 'coldshot-test' )
+        self.writer = Writer( self.test_dir, 1 )
+        
+    def tearDown( self ):
+        self.writer.close()
+        shutil.rmtree( self.test_dir, True )
+    
+    def assert_calls_written( self, *expected ):
+        return self._base_was_written( self.writer.calls_filename, expected )
+    def assert_lines_written( self, *expected ):
+        return self._base_was_written( self.writer.lines_filename, expected )
     def assert_index_written( self, *expected ):
-        return self._base_was_written( self.INDEX_FILE, expected )
+        return self._base_was_written( self.writer.index_filename, expected )
+    
     def _base_was_written( self, filename, expected ):
         output = open( filename ).read()
         expected = ''.join( expected )
@@ -32,12 +40,12 @@ class TestWriter( TestCase ):
     def test_call( self ):
         self.writer.call( 2, 1, 1, 1 )
         self.writer.close()
-        self.assert_was_written( 'c\x02\x00\x00\x00\x01\x00\x01\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
+        self.assert_calls_written( 'c\x02\x00\x00\x00\x01\x00\x01\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
     def test_return( self ):
         self.writer.return_( 2, 1,2, 1 )
         self.writer.close()
-        self.assert_was_written( u'r\x02\x00\x00\x00\x01\x00\x02\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
+        self.assert_calls_written( u'r\x02\x00\x00\x00\x01\x00\x02\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
     def test_line( self ):
         self.writer.line( 2, 25, 1 )
         self.writer.close()
-        self.assert_was_written( u'l\x02\x00\x00\x00\x00\x00\x19\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
+        self.assert_lines_written( u'\x02\x00\x00\x00\x00\x00\x19\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
