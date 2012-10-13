@@ -37,8 +37,9 @@ class Loader( object ):
                 self.function_names[ name ] = (fileno,lineno)
     def fcalls( self, fileno, lineno ):
         """Return indices for all calls of given function"""
-        return numpy.logical_and( 
-            self.calls, 
-            self.calls_data['fileno'] == fileno, 
-            self.calls_data['lineno'] == lineno 
-        )
+        return self.calls_data[numpy.logical_and( 
+                self.calls, 
+                self.calls_data['fileno'] == fileno, 
+                self.calls_data['lineno'] == lineno 
+            )]
+    

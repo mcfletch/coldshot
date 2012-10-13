@@ -30,5 +30,9 @@ class TestProfiler( TestCase ):
         fileno,lineno = loader.functions.keys()[0]
         
         records = loader.fcalls( fileno,lineno )
-        assert len(records)
-        assert False, records
+        assert len(records) == 1
+        record = records[0] 
+        assert record['fileno'] == fileno, (fileno,record)
+        assert record['lineno'] == lineno, (fileno,record)
+
+    

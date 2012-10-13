@@ -55,7 +55,7 @@ __all__ = [
 # Numpy structure describing the format written to disk for this 
 # version of the profiler...
 CALLS_STRUCTURE = [
-    ('rectype','b1'),('thread','i4'),('fileno','<i2'),('lineno','<i2'),('timestamp','<L')
+    ('rectype','S1'),('thread','i4'),('fileno','<i2'),('lineno','<i2'),('timestamp','<L')
 ]
 LINES_STRUCTURE = [
     ('thread','i4'),('fileno','<i2'),('lineno','<i2'),('timestamp','<L')
@@ -292,13 +292,13 @@ cdef class Profiler:
     
     def start( self ):
         """Install this profiler as the trace function for the interpreter"""
-        PyEval_SetProfile(trace_callback, self)
+        #PyEval_SetProfile(trace_callback, self)
         PyEval_SetTrace(trace_callback, self)
         self.internal_time = 0
         self.discount()
     def stop( self ):
         """Remove the currently installed profiler (even if it is not us)"""
-        coldshot_unset_profile()
+        #coldshot_unset_profile()
         coldshot_unset_trace()
         self.writer.flush()
     
