@@ -31,11 +31,21 @@ cdef extern from 'Python.h':
     
     cdef void PyEval_SetProfile(Py_tracefunc func, object arg)
     cdef void PyEval_SetTrace(Py_tracefunc func, object arg)
+
+cdef extern from 'methodobject.h':
+    ctypedef struct PyMethodDef:
+        char  *ml_name
+    ctypedef struct PyCFunctionObject:
+        PyMethodDef * m_ml
+        void * m_self
+        void * m_module
+    cdef int PyCFunction_Check(object op)
     
 cdef extern from 'frameobject.h':
     ctypedef struct PyFrameObject:
         PyCodeObject *f_code
         PyThreadState *f_tstate
+        PyFrameObject *f_back
         int f_lineno
 
 # timers, from line_profiler
@@ -55,7 +65,7 @@ __all__ = [
 # Numpy structure describing the format written to disk for this 
 # version of the profiler...
 CALLS_STRUCTURE = [
-    ('rectype','S1'),('thread','i4'),('fileno','<i2'),('lineno','<i2'),('timestamp','<L')
+    ('rectype','S1'),('thread','i4'),('function','<i4'),('timestamp','<L')
 ]
 LINES_STRUCTURE = [
     ('thread','i4'),('fileno','<i2'),('lineno','<i2'),('timestamp','<L')
@@ -152,7 +162,7 @@ cdef class Writer:
             if written != 1:
                 raise IOError( "Unable to write to output file" )
     
-    cdef clean_name( self, str name ):
+    cdef clean_name( self, bytes name ):
         return urllib.quote( name )
     
     def prefix( self ):
@@ -163,32 +173,31 @@ cdef class Writer:
         self.write_long_long( 1, self.index_fd )
         self.write_string( '\n', self.index_fd )
     
-    def file( self, int fileno, str filename ):
+    def file( self, int fileno, bytes filename ):
         return self.write_file( fileno, filename )
-    cdef write_file( self, int fileno, str filename ):
-        self.write_string( 'F %d %s\n'%( fileno, self.clean_name( filename )), self.index_fd)
+    cdef write_file( self, int fileno, bytes filename ):
+        self.write_string( b'F %d %s\n'%( fileno, self.clean_name( filename )), self.index_fd)
     
-    def func( self, fileno, lineno, name ):
-        return self.write_func( fileno, lineno, name )
-    cdef write_func( self, int fileno, int lineno, str name ):
+    def func( self, count, fileno, lineno, name ):
+        return self.write_func( count, fileno, lineno, name )
+    cdef write_func( self, int count, int fileno, int lineno, bytes name ):
         self.write_string( 
-            'f %hi %hi %s\n'%( fileno, lineno, self.clean_name(name) ), 
+            b'f %hi %hi %hi %s\n'%( count, fileno, lineno, self.clean_name(name) ), 
             self.index_fd
         )
     
-    def call( self, threadno, fileno, lineno, ts ):
-        return self.write_call( threadno, fileno, lineno, ts )
-    cdef write_call( self, long threadno, int fileno, int lineno, PY_LONG_LONG ts ):
-        self.write_string( 'c', self.calls_fd )
+    def call( self, threadno, funcno, ts ):
+        return self.write_call( threadno, funcno, ts )
+    cdef write_call( self, long threadno, int funcno, PY_LONG_LONG ts ):
+        self.write_string( b'c', self.calls_fd )
         self.write_long( threadno, self.calls_fd )
-        self.write_short( fileno, self.calls_fd )
-        self.write_short( lineno, self.calls_fd )
+        self.write_long( funcno, self.calls_fd )
         self.write_long_long( ts, self.calls_fd )
     
     def return_( self, threadno, fileno, lineno, ts ):
         return self.write_return( threadno, fileno, lineno, ts )
     cdef write_return( self, long threadno, int fileno, int lineno, PY_LONG_LONG ts ):
-        self.write_string( 'r', self.calls_fd )
+        self.write_string( b'r', self.calls_fd )
         self.write_long( threadno, self.calls_fd )
         self.write_short( fileno, self.calls_fd )
         self.write_short( lineno, self.calls_fd )
@@ -228,40 +237,73 @@ cdef class Profiler:
     >>> p.index_filename
     'test.profile.index'
     """
-    cdef dict files
-    cdef int next_file
-    cdef set functions
+    cdef public dict files
+    cdef public dict functions
     cdef public Writer writer
-    cdef PY_LONG_LONG internal_time
-    cdef PY_LONG_LONG last_time
+    cdef public PY_LONG_LONG internal_time
+    cdef public PY_LONG_LONG last_time
     def __init__( self, filename, version=1 ):
         self.writer = Writer( filename, version )
         self.writer.prefix()
         self.files = {}
-        self.functions = set()
-        self.next_file = 1
-    cdef file_to_number( self, PyCodeObject code ):
+        self.functions = {}
+    cdef int file_to_number( self, PyCodeObject code ):
+        """Convert a code reference to a file number"""
+        cdef int count
         filename = <object>(code.co_filename)
-        if filename in self.files:
-            return self.files[filename]
-        # TODO: incref
-        self.files[filename] = result = self.next_file 
-        self.next_file += 1
-        self.writer.write_file( result, filename )
-        return result 
+        if filename not in self.files:
+            count = len( self.files ) + 1
+            self.files[filename] = (count, filename)
+            self.writer.write_file( count, filename )
+            return count
+        return <int>(self.files[filename][0])
+    cdef int func_to_number( self, PyCodeObject code ):
+        """Convert a function reference to a persistent function ID"""
+        cdef tuple key 
+        cdef bytes name
+        cdef int count
+        cdef int fileno
+        key = (<object>code.co_filename,<int>code.co_firstlineno)
+        if key not in self.functions:
+            fileno = self.file_to_number( code )
+            name = b'%s.%s'%(<object>code.co_filename,<object>code.co_name)
+            count = len(self.functions)+1
+            self.functions[key] = (count, name)
+            self.writer.write_func( count, fileno, code.co_firstlineno, name)
+            return count
+        return <int>(self.functions[key][0])
+    cdef int builtin_to_number( self, PyCFunctionObject * func ):
+        """Convert a builtin-function reference to a persistent function ID
+        
+        Note: assumes that builtin function IDs (pointers) are persistent 
+        and unique.
+        """
+        cdef long id 
+        cdef int count
+        cdef bytes name
+        id = <long>func 
+        if id not in self.functions:
+            name = builtin_name( func[0] )
+            count = len(self.functions) + 1
+            self.functions[id] = (count, name)
+            self.writer.write_func( count, 0, 0, name )
+            return count
+        return <int>(self.functions[id][0])
+        
     cdef thread_id( self, PyFrameObject frame ):
         return frame.f_tstate.thread_id
         
     cdef write_call( self, PY_LONG_LONG ts, PyFrameObject frame ):
         cdef PyCodeObject code
-        code = frame.f_code[0]
-        fileno = self.file_to_number( code )
-        lineno = code.co_firstlineno
-        key = (fileno,lineno)
-        if key not in self.functions:
-            self.functions.add( key )
-            self.writer.write_func( fileno, lineno, <object>(code.co_name) )
-        self.writer.write_call( self.thread_id( frame ), fileno, lineno, ts)
+        cdef int func_number 
+        func_number = self.func_to_number( frame.f_code[0] )
+        self.writer.write_call( self.thread_id( frame ), func_number, ts)
+    cdef write_c_call( self, PY_LONG_LONG ts, PyFrameObject frame, PyCFunctionObject * func ):
+        cdef long id 
+        cdef int func_number
+        func_number = self.builtin_to_number( func )
+        self.writer.write_call( self.thread_id( frame ), func_number, ts)
+
     cdef write_return( self, PY_LONG_LONG ts, PyFrameObject frame ):
         code = frame.f_code[0]
         fileno = self.file_to_number( code )
@@ -292,13 +334,13 @@ cdef class Profiler:
     
     def start( self ):
         """Install this profiler as the trace function for the interpreter"""
-        #PyEval_SetProfile(trace_callback, self)
+        PyEval_SetProfile(profile_callback, self)
         PyEval_SetTrace(trace_callback, self)
         self.internal_time = 0
         self.discount()
     def stop( self ):
         """Remove the currently installed profiler (even if it is not us)"""
-        #coldshot_unset_profile()
+        coldshot_unset_profile()
         coldshot_unset_trace()
         self.writer.flush()
     
@@ -306,19 +348,76 @@ cdef class Profiler:
         if self.writer:
             self.writer.close()
 
+cdef bytes module_name( PyCFunctionObject func ):
+    cdef object local_mod
+    if func.m_self != NULL:
+        # is a method, use the type's name as the key...
+        local_mod = (<object>func.m_self).__class__
+        return b'%s.%s'%(local_mod.__module__,local_mod.__class__.__name__)
+    else:
+        if func.m_module != NULL:
+            local_mod = <object>func.m_module
+            if isinstance( local_mod, bytes ):
+                return local_mod
+            elif isinstance( local_mod, unicode ):
+                return local_mod.encode( 'utf8' )
+            else:
+                return local_mod.__name__
+        else:
+            # func.m_module == NULL
+            return b'__builtin__'
+cdef bytes builtin_name( PyCFunctionObject func ):
+    cdef object mod_name 
+    cdef object func_name 
+    mod_name = module_name( func )
+    func_name = func.m_ml[0].ml_name
+    return b'<%s.%s>'%(mod_name,func_name)
+
+cdef short unsigned int _stack_depth( PyFrameObject * frame ):
+    """Count stack-depth for the given frame
+    
+    Note: limited to unsigned short int depth
+    """
+    cdef short unsigned int depth
+    depth = 1
+    while frame[0].f_back != NULL:
+        depth += 1
+        frame = frame[0].f_back
+    return depth
+
 cdef int trace_callback(
+    object self,
+    PyFrameObject *frame,
+    int what,
+    object arg
+):
+    """Callback for trace (line) operations
+    
+    As of Python 2.7 the trace function does *not* seem to get c_call/c_return 
+    events, which seems wrong/silly/argh-ish
+    """
+    cdef Profiler profiler = <Profiler>self
+    ts = profiler.delta()
+    if what == PyTrace_LINE:
+        profiler.write_line( ts, frame[0] )
+    profiler.discount()
+    return 0
+    
+cdef int profile_callback(
     object self, 
     PyFrameObject *frame, 
     int what,
     object arg
 ):
+    """Callback for profile (call/return, include C call/return) operations"""
     cdef Profiler profiler = <Profiler>self
     ts = profiler.delta()
-    if what == PyTrace_LINE:
-        profiler.write_line( ts, frame[0] )
-    elif what == PyTrace_CALL:
+    if what == PyTrace_CALL:
         profiler.write_call( ts, frame[0] )
-    elif what == PyTrace_RETURN:
+    elif what == PyTrace_C_CALL:
+        if PyCFunction_Check( arg ):
+            profiler.write_c_call( ts, frame[0], <PyCFunctionObject *>arg )
+    elif what == PyTrace_RETURN or what == PyTrace_C_RETURN:
         profiler.write_return( ts, frame[0] )
     profiler.discount()
     return 0

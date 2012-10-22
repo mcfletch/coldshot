@@ -31,15 +31,14 @@ class Loader( object ):
                 self.files[fileno] = filename 
                 self.file_names[filename] = fileno
             elif line[0] == 'f':
-                fileno,lineno,name = line[1:4]
-                fileno,lineno = int(fileno),int(lineno)
-                self.functions[ (fileno,lineno) ] = name
-                self.function_names[ name ] = (fileno,lineno)
-    def fcalls( self, fileno, lineno ):
+                funcno,fileno,lineno,name = line[1:5]
+                funcno,fileno,lineno = int(funcno),int(fileno),int(lineno)
+                self.functions[ funcno ] = (fileno,lineno,name)
+                self.function_names[ name ] = funcno
+    def fcalls( self, funcno ):
         """Return indices for all calls of given function"""
         return self.calls_data[numpy.logical_and( 
-                self.calls, 
-                self.calls_data['fileno'] == fileno, 
-                self.calls_data['lineno'] == lineno 
-            )]
+            self.calls, 
+            self.calls_data['function'] == funcno
+        )]
     

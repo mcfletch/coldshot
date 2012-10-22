@@ -35,4 +35,16 @@ class TestProfiler( TestCase ):
         assert record['fileno'] == fileno, (fileno,record)
         assert record['lineno'] == lineno, (fileno,record)
 
+    def test_c_calls( self ):
+        x = []
+        self.profiler.start()
+        for i in range(200):
+            x.append( i )
+        self.profiler.stop()
+        assert self.profiler.files
+        assert self.profiler.functions
+        
+        loader = Loader( self.test_dir )
+        assert loader.functions 
+        assert len(loader.functions) == 2, loader.functions 
     
