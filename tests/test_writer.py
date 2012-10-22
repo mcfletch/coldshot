@@ -1,6 +1,11 @@
 from unittest import TestCase
-from coldshot.profiler import Writer
-import tempfile, shutil
+from coldshot.profiler import Writer, ThreadProfileWriter
+import tempfile, shutil, os, threading, gc
+
+def thread(tpw):
+    print 'registering'
+    tpw.register_closer()
+    print 'registered'
 
 class TestWriter( TestCase ):
     def setUp( self ):
@@ -17,7 +22,29 @@ class TestWriter( TestCase ):
         return self._base_was_written( self.writer.lines_filename, expected )
     def assert_index_written( self, *expected ):
         return self._base_was_written( self.writer.index_filename, expected )
-    
+
+        
+    def test_tpw_closing( self ):
+        tpw = ThreadProfileWriter( self.test_dir, 1 )
+        assert os.path.exists( tpw.calls_filename )
+        assert os.path.exists( tpw.lines_filename )
+        fh = tpw.calls_file 
+        closer = tpw.closer()
+        del tpw
+        assert fh.closed
+# Does not work, which kills the idea...
+#    def test_tpw_register( self ):
+#        tpw = ThreadProfileWriter( self.test_dir, 1 )
+#        fh = tpw.calls_file 
+#        t = threading.Thread( target = thread, args=(tpw,) )
+#        t.start()
+#        t.join()
+#        del t
+#        del tpw
+#        gc.collect()
+#        assert fh.closed
+        
+        
     def _base_was_written( self, filename, expected ):
         output = open( filename ).read()
         expected = ''.join( expected )
@@ -38,13 +65,13 @@ class TestWriter( TestCase ):
         self.writer.close()
         self.assert_index_written( b'f 8 23 25 funcname\n' )
     def test_call( self ):
-        self.writer.call( 2, 1, 1 )
+        self.writer.call( 2, 1, 1, 5 )
         self.writer.close()
-        self.assert_calls_written( b'c\x02\x00\x00\x00\x01\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
+        self.assert_calls_written( b'c\x02\x00\x00\x00\x01\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x05\x00' )
     def test_return( self ):
-        self.writer.return_( 2, 1,2, 1 )
+        self.writer.return_( 2, 1,2, 1, 5 )
         self.writer.close()
-        self.assert_calls_written( b'r\x02\x00\x00\x00\x01\x00\x02\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
+        self.assert_calls_written( b'r\x02\x00\x00\x00\x01\x00\x02\x00\x01\x00\x00\x00\x00\x00\x00\x00\x05\x00' )
     def test_line( self ):
         self.writer.line( 2, 25, 1 )
         self.writer.close()
