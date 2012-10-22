@@ -1,16 +1,16 @@
 """Module providing a Numpy-based loader for coldshot profiles"""
 import os, numpy
-from . import coldshot
+from . import profiler
 
 class Loader( object ):
     def __init__( self, directory ):
         self.directory = directory
-        self.index_filename = os.path.join( directory, coldshot.Writer.INDEX_FILENAME )
-        self.calls_filename = os.path.join( directory, coldshot.Writer.CALLS_FILENAME )
-        self.lines_filename = os.path.join( directory, coldshot.Writer.LINES_FILENAME )
+        self.index_filename = os.path.join( directory, profiler.Writer.INDEX_FILENAME )
+        self.calls_filename = os.path.join( directory, profiler.Writer.CALLS_FILENAME )
+        self.lines_filename = os.path.join( directory, profiler.Writer.LINES_FILENAME )
         
-        self.calls_data = numpy.memmap( self.calls_filename ).view( coldshot.CALLS_STRUCTURE )
-        self.lines_data = numpy.memmap( self.lines_filename ).view( coldshot.LINES_STRUCTURE )
+        self.calls_data = numpy.memmap( self.calls_filename ).view( profiler.CALLS_STRUCTURE )
+        self.lines_data = numpy.memmap( self.lines_filename ).view( profiler.LINES_STRUCTURE )
         
         self.calls = self.calls_data['rectype'] == 'c'
         self.returns = self.calls_data['rectype'] == 'r'

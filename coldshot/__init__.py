@@ -5,5 +5,5 @@
 
 """
 __version__ = '1.0.0a1'
-from .coldshot import *
+from .profiler import *
 #from .loader import *

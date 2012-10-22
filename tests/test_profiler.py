@@ -1,5 +1,5 @@
 from unittest import TestCase
-from coldshot.coldshot import Profiler
+from coldshot.profiler import Profiler
 from coldshot.loader import Loader
 import numpy, tempfile, os, shutil
 
@@ -26,14 +26,13 @@ class TestProfiler( TestCase ):
         assert len(loader.files) == 1, loader.files 
         
         assert loader.functions 
-        assert len(loader.functions) == 1, loader.functions
-        fileno,lineno = loader.functions.keys()[0]
-        
-        records = loader.fcalls( fileno,lineno )
-        assert len(records) == 1
-        record = records[0] 
-        assert record['fileno'] == fileno, (fileno,record)
-        assert record['lineno'] == lineno, (fileno,record)
+        assert len(loader.functions) == 2, loader.functions # expected blah() and stop()
+        for funcno, (fileno,lineno,name) in loader.functions.items():
+            records = loader.fcalls( funcno )
+            assert len(records) == 1
+            record = records[0]
+            
+            assert record['function'] == funcno, (fileno,record)
 
     def test_c_calls( self ):
         x = []

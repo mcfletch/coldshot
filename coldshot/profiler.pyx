@@ -93,8 +93,6 @@ cdef class Writer:
     cdef int opened
     
     cdef size_t long_long_size
-    cdef size_t int_size
-    cdef size_t short_size 
     
     cdef FILE * index_fd
     cdef FILE * lines_fd 
@@ -108,8 +106,6 @@ cdef class Writer:
         self.prepare_directory( directory )
         
         self.long_long_size = sizeof( PY_LONG_LONG )
-        self.int_size = sizeof( long int )
-        self.short_size = sizeof( short int )
     
     INDEX_FILENAME = b'index.profile'
     CALLS_FILENAME = b'calls.data'

@@ -1,5 +1,5 @@
 from unittest import TestCase
-from coldshot.coldshot import Writer
+from coldshot.profiler import Writer
 import tempfile, shutil
 
 class TestWriter( TestCase ):
@@ -32,20 +32,20 @@ class TestWriter( TestCase ):
     def test_file( self ):
         self.writer.file( 23, 'Boo hoo' )
         self.writer.close()
-        self.assert_index_written( 'F 23 Boo%20hoo\n' )
+        self.assert_index_written( b'F 23 Boo%20hoo\n' )
     def test_func( self ):
-        self.writer.func( 23, 25, 'funcname' )
+        self.writer.func( 8, 23, 25, 'funcname' )
         self.writer.close()
-        self.assert_index_written( 'f 23 25 funcname\n' )
+        self.assert_index_written( b'f 8 23 25 funcname\n' )
     def test_call( self ):
-        self.writer.call( 2, 1, 1, 1 )
+        self.writer.call( 2, 1, 1 )
         self.writer.close()
-        self.assert_calls_written( 'c\x02\x00\x00\x00\x01\x00\x01\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
+        self.assert_calls_written( b'c\x02\x00\x00\x00\x01\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
     def test_return( self ):
         self.writer.return_( 2, 1,2, 1 )
         self.writer.close()
-        self.assert_calls_written( u'r\x02\x00\x00\x00\x01\x00\x02\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
+        self.assert_calls_written( b'r\x02\x00\x00\x00\x01\x00\x02\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
     def test_line( self ):
         self.writer.line( 2, 25, 1 )
         self.writer.close()
-        self.assert_lines_written( u'\x02\x00\x00\x00\x00\x00\x19\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
+        self.assert_lines_written( b'\x02\x00\x00\x00\x00\x00\x19\x00\x01\x00\x00\x00\x00\x00\x00\x00' )

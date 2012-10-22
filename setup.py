@@ -21,11 +21,11 @@ else:
 
 extensions = [
     Extension(
-        "coldshot.coldshot",
+        "coldshot.profiler",
         [
             [
-                os.path.join( 'coldshot','coldshot.c' ),
-                os.path.join('coldshot','coldshot.pyx')
+                os.path.join( 'coldshot','profiler.c' ),
+                os.path.join('coldshot','profiler.pyx')
             ][bool( have_cython )],
             os.path.join( 'coldshot', 'lowlevel.c' ),
             os.path.join( 'coldshot', 'timers.c' ),
