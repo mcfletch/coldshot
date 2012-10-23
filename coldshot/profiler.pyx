@@ -228,17 +228,8 @@ cdef class Writer:
     def __dealloc__( self ):
         self._close()
 
-def writer_closer( thread_id, *files ):
-    def closer( *args ):
-        for file in files:
-            file.close()
-        print 'All files closed'
-        try:
-            ThreadProfileWriter.live.pop( thread_id )
-        except KeyError as err:
-            pass
-    return closer
         
+TPW_KEY = 'coldshot.profiler.ThreadProfileWriter'
 cdef class ThreadProfileWriter:
     """Create a per-thread profile writer to write lines/calls"""
     live = {}
@@ -262,20 +253,24 @@ cdef class ThreadProfileWriter:
         self.calls_file = open( self.calls_filename, 'wb' )
         self.lines_filename = os.path.join( self.directory, self.LINE_FILE_TEMPLATE%( self.thread_id, ))
         self.lines_file = open( self.lines_filename, 'wb' )
-    
     cdef public write_calls( self, bytes data ):
         self.calls_file.write( data )
     cdef public write_lines( self, bytes data ):
         self.lines_file.write( data )
     
-    def closer( self ):
-        return weakref.ref( self, writer_closer( self.calls_file, self.lines_file ))
-    def register( self ):
-        """Add ourselves to the current thread's metadata dictionary"""
-        # DUH: need to add a reference to *this* object, and keep the weakref 
-        # somewhere else again...
-        ThreadProfileWriter.live[self.thread_id] = self.closer()
-        PyThreadState_GetDict()['coldshot.profiler.ThreadProfileWriter'] = self
+cdef public current_tpw(directory,thread_id):
+    """Get the current or create a new ThreadProfileWriter"""
+    cdef dict thread_dict 
+    cdef ThreadProfileWriter tpw
+    thread_dict = PyThreadState_GetDict()
+    if thread_dict == NULL:
+        raise RuntimeError( "No current thread dictionary" )
+    else:
+        tpw = thread_dict.get( TPW_KEY )
+        if tpw is None:
+            tpw = ThreadProfileWriter( directory, thread_id )
+            thread_dict[TPW] = tpw 
+        return tpw
 
 cdef class Profiler:
     """Coldshot Profiler implementation 
