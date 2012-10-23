@@ -1,10 +1,10 @@
 from unittest import TestCase
 from coldshot.profiler import Writer, ThreadProfileWriter
-import tempfile, shutil, os, threading, gc
+import tempfile, shutil, os, threading, gc, time
 
 def thread(tpw):
     print 'registering'
-    tpw.register_closer()
+    tpw.register()
     print 'registered'
 
 class TestWriter( TestCase ):
@@ -31,18 +31,19 @@ class TestWriter( TestCase ):
         fh = tpw.calls_file 
         closer = tpw.closer()
         del tpw
+        print 'Deletion complete'
         assert fh.closed
-# Does not work, which kills the idea...
-#    def test_tpw_register( self ):
-#        tpw = ThreadProfileWriter( self.test_dir, 1 )
-#        fh = tpw.calls_file 
-#        t = threading.Thread( target = thread, args=(tpw,) )
-#        t.start()
-#        t.join()
-#        del t
-#        del tpw
-#        gc.collect()
-#        assert fh.closed
+    def test_tpw_register( self ):
+        tpw = ThreadProfileWriter( self.test_dir, 1 )
+        fh = tpw.calls_file 
+        t = threading.Thread( target = thread, args=(tpw,) )
+        del tpw 
+        t.start()
+        t.join()
+        del t
+        gc.collect()
+        time.sleep( .1 )
+        assert fh.closed
         
         
     def _base_was_written( self, filename, expected ):

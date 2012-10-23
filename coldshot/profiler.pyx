@@ -228,15 +228,20 @@ cdef class Writer:
     def __dealloc__( self ):
         self._close()
 
-def writer_closer( *files ):
+def writer_closer( thread_id, *files ):
     def closer( *args ):
-        print 'Closing', files
         for file in files:
             file.close()
+        print 'All files closed'
+        try:
+            ThreadProfileWriter.live.pop( thread_id )
+        except KeyError as err:
+            pass
     return closer
         
 cdef class ThreadProfileWriter:
     """Create a per-thread profile writer to write lines/calls"""
+    live = {}
     cdef public long thread_id 
     cdef public object directory 
     cdef public object calls_filename
@@ -265,14 +270,12 @@ cdef class ThreadProfileWriter:
     
     def closer( self ):
         return weakref.ref( self, writer_closer( self.calls_file, self.lines_file ))
-    def register_closer( self ):
-        """Register our weakref closer such that it gets called when thread dies"""
-        cdef dict thread_dict 
-        thread_dict = PyThreadState_GetDict()
-        if thread_dict is None:
-            pass
-        else:
-            thread_dict['coldshot.profiler.ThreadProfileWriter.closer'] = self.closer()
+    def register( self ):
+        """Add ourselves to the current thread's metadata dictionary"""
+        # DUH: need to add a reference to *this* object, and keep the weakref 
+        # somewhere else again...
+        ThreadProfileWriter.live[self.thread_id] = self.closer()
+        PyThreadState_GetDict()['coldshot.profiler.ThreadProfileWriter'] = self
 
 cdef class Profiler:
     """Coldshot Profiler implementation 
