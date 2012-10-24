@@ -1,5 +1,5 @@
 from unittest import TestCase
-from coldshot.profiler import Writer, ThreadProfileWriter
+from coldshot.profiler import Writer
 import tempfile, shutil, os, threading, gc, time
 
 def thread(tpw):
@@ -23,29 +23,6 @@ class TestWriter( TestCase ):
     def assert_index_written( self, *expected ):
         return self._base_was_written( self.writer.index_filename, expected )
 
-        
-    def test_tpw_closing( self ):
-        tpw = ThreadProfileWriter( self.test_dir, 1 )
-        assert os.path.exists( tpw.calls_filename )
-        assert os.path.exists( tpw.lines_filename )
-        fh = tpw.calls_file 
-        closer = tpw.closer()
-        del tpw
-        print 'Deletion complete'
-        assert fh.closed
-    def test_tpw_register( self ):
-        tpw = ThreadProfileWriter( self.test_dir, 1 )
-        fh = tpw.calls_file 
-        t = threading.Thread( target = thread, args=(tpw,) )
-        del tpw 
-        t.start()
-        t.join()
-        del t
-        gc.collect()
-        time.sleep( .1 )
-        assert fh.closed
-        
-        
     def _base_was_written( self, filename, expected ):
         output = open( filename ).read()
         expected = ''.join( expected )

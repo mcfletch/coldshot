@@ -49,24 +49,13 @@ if __name__ == "__main__":
             """Topic :: Software Development :: Libraries :: Python Modules""",
             """Intended Audience :: Developers""",
         ],
-        'keywords': 'profile,hotshot',
-        'long_description' : """Updated version of the Hotshot profiler""",
+        'keywords': 'profile,hotshot,coldshot',
+        'long_description' : """Python profiler using Hotshot like tracing""",
         'platforms': ['Any'],
     }
     if setuptools:
         extraArguments['install_package_data'] = True
     ### Now the actual set up call
-    if sys.platform == 'darwin':
-        gui_commands = [
-            'runsnake=runsnakerun.macshim:macshim',
-            'runsnake32=runsnakerun.runsnake:main',
-            'runsnakemem=runsnakerun.runsnake:meliaemain',
-        ]
-    else:
-        gui_commands = [
-            'runsnake=runsnakerun.runsnake:main',
-            'runsnakemem=runsnakerun.runsnake:meliaemain',
-        ]
     if have_cython:
         extraArguments['cmdclass'] = {
             'build_ext': build_ext,
@@ -76,7 +65,7 @@ if __name__ == "__main__":
         version = version,
         url = "http://www.vrplumber.com/programming/runsnakerun/",
         download_url = "http://pypi.python.org/pypi/ColdShot",
-        description = "Updated version of the Hotshot profiler",
+        description = "Python profiler using Hotshot like tracing",
         author = "Mike C. Fletcher",
         author_email = "mcfletch@vrplumber.com",
         install_requires = [
@@ -96,6 +85,9 @@ if __name__ == "__main__":
         },
         zip_safe=False,
         entry_points = {
+            'console_scripts': [
+                'coldshot = coldshot.externals:main',
+            ]
         },
         **extraArguments
     )

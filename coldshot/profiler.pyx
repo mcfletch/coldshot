@@ -228,50 +228,6 @@ cdef class Writer:
     def __dealloc__( self ):
         self._close()
 
-        
-TPW_KEY = 'coldshot.profiler.ThreadProfileWriter'
-cdef class ThreadProfileWriter:
-    """Create a per-thread profile writer to write lines/calls"""
-    live = {}
-    cdef public long thread_id 
-    cdef public object directory 
-    cdef public object calls_filename
-    cdef public object lines_filename
-    
-    cdef public object calls_file 
-    cdef public object lines_file 
-    cdef object __weakref__
-    
-    def __cinit__( self, directory,  long thread_id ):
-        self.directory = directory
-        self.thread_id = thread_id
-        self.open()
-    CALL_FILE_TEMPLATE = 'thread-%s.calls'
-    LINE_FILE_TEMPLATE = 'thread-%s.lines'
-    cdef public open( self ):
-        self.calls_filename = os.path.join( self.directory, self.CALL_FILE_TEMPLATE%( self.thread_id, ))
-        self.calls_file = open( self.calls_filename, 'wb' )
-        self.lines_filename = os.path.join( self.directory, self.LINE_FILE_TEMPLATE%( self.thread_id, ))
-        self.lines_file = open( self.lines_filename, 'wb' )
-    cdef public write_calls( self, bytes data ):
-        self.calls_file.write( data )
-    cdef public write_lines( self, bytes data ):
-        self.lines_file.write( data )
-    
-cdef public current_tpw(directory,thread_id):
-    """Get the current or create a new ThreadProfileWriter"""
-    cdef dict thread_dict 
-    cdef ThreadProfileWriter tpw
-    thread_dict = PyThreadState_GetDict()
-    if thread_dict == NULL:
-        raise RuntimeError( "No current thread dictionary" )
-    else:
-        tpw = thread_dict.get( TPW_KEY )
-        if tpw is None:
-            tpw = ThreadProfileWriter( directory, thread_id )
-            thread_dict[TPW] = tpw 
-        return tpw
-
 cdef class Profiler:
     """Coldshot Profiler implementation 
     
@@ -289,8 +245,8 @@ cdef class Profiler:
     cdef public Writer writer
     cdef public PY_LONG_LONG internal_time
     cdef public PY_LONG_LONG last_time
-    def __init__( self, filename, version=1 ):
-        self.writer = Writer( filename, version )
+    def __init__( self, dirname, version=1 ):
+        self.writer = Writer( dirname, version )
         self.writer.prefix()
         self.files = {}
         self.functions = {}
