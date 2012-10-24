@@ -6,4 +6,5 @@
 """
 __version__ = '1.0.0a1'
 from .profiler import *
-#from .loader import *
+from .loader import *
+from .externals import *

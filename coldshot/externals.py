@@ -1,6 +1,8 @@
-"""Top level (mainloop) operation"""
+"""Top level (mainloop-like) operation"""
 from . import profiler
 import tempfile, runpy
+
+__all__ = ('run','runctx')
 
 def run( code, filename=None ):
     """Run exec-able code under the profiler

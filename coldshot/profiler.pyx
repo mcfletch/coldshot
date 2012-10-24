@@ -324,7 +324,7 @@ cdef class Profiler:
     cdef write_line( self, PY_LONG_LONG ts, PyFrameObject frame ):
         self.writer.write_line( self.thread_id( frame ), frame.f_lineno, ts )
     
-    cdef delta( self ):
+    cdef public delta( self ):
         """Calculate the delta since the last call to hpTimer(), store new value
         
         TODO: this discounting needs to be per-thread, but that isn't quite right 
@@ -335,11 +335,15 @@ cdef class Profiler:
         cdef PY_LONG_LONG current
         cdef PY_LONG_LONG delta
         current = hpTimer()
-        delta = current - self.last_time
-        self.internal_time += delta 
-        self.last_time = current
+        if current > self.last_time:
+            delta = current - self.last_time
+            self.internal_time += delta 
+            self.last_time = current
+        else:
+            # cases where clock has gone backward e.g. multiprocessor weirdness
+            delta = 0
         return self.internal_time
-    cdef discount( self ):
+    cdef public discount( self ):
         """Discount the time since the last call to hpTimer()"""
         self.last_time = hpTimer()
         return self.internal_time
@@ -406,7 +410,7 @@ cdef int trace_callback(
     """Callback for trace (line) operations
     
     As of Python 2.7 the trace function does *not* seem to get c_call/c_return 
-    events, which seems wrong/silly/argh-ish
+    events, which seems wrong/silly
     """
     cdef Profiler profiler = <Profiler>self
     ts = profiler.delta()
@@ -435,5 +439,7 @@ cdef int profile_callback(
             profiler.write_c_call( ts, frame[0], <PyCFunctionObject *>arg, stack_depth )
     elif what == PyTrace_RETURN or what == PyTrace_C_RETURN:
         profiler.write_return( ts, frame[0], stack_depth )
+    # discount the time during the profiler callback,
+    # though this means multi-threaded operations may go backward in time...
     profiler.discount()
     return 0

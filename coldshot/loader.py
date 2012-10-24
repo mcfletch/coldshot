@@ -2,6 +2,8 @@
 import os, numpy
 from . import profiler
 
+__all__ = ("Loader",)
+
 class Loader( object ):
     def __init__( self, directory ):
         self.directory = directory
@@ -41,4 +43,3 @@ class Loader( object ):
             self.calls, 
             self.calls_data['function'] == funcno
         )]
-    
