@@ -3,6 +3,11 @@
 from cpython cimport PY_LONG_LONG
 import urllib, os, weakref
 
+cdef extern from "stdint.h":
+    ctypedef int int32_t
+    ctypedef int int16_t
+    ctypedef int int64_t
+
 cdef extern from "frameobject.h":
     ctypedef int (*Py_tracefunc)(object self, PyFrameObject *py_frame, int what, object arg)
 
