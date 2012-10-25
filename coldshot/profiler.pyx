@@ -162,8 +162,10 @@ cdef class Writer:
             if written != 1:
                 raise IOError( "Unable to write to output file" )
     
-    cdef clean_name( self, bytes name ):
-        return urllib.quote( name )
+    cdef bytes clean_name( self, bytes name, quote=urllib.quote ):
+        if name is None:
+            return b''
+        return quote( name )
     
     def prefix( self ):
         return self.write_prefix()

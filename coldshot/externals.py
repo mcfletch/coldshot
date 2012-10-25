@@ -1,6 +1,6 @@
 """Top level (mainloop-like) operation"""
 from . import profiler
-import tempfile, runpy
+import tempfile, atexit
 
 __all__ = ('run','runctx')
 
@@ -45,6 +45,7 @@ def runctx( code, globals=None, locals=None, prof_dir=None ):
     if locals is None:
         locals = globals 
     prof = profiler.Profiler( prof_dir )
+    atexit.register( prof.stop )
     prof.start()
     try:
         exec code in globals, locals

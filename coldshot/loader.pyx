@@ -103,8 +103,8 @@ cdef public class FileInfo [object Coldshot_FileInfo, type Coldshot_FileInfo_Typ
         return line_object
     def __unicode__( self ):
         return """File: %s\n%s"""%( self.filename, '\n'.join([
-            '% 5i: % 8i % 8.3f'%( x.lineno, x.count, x.time/1000000. )
-            for (k,x) in self.line_map.items()
+            '% 5i: % 8i % 8.4fs'%( x.lineno, x.count, x.time/1000000. )
+            for (k,x) in sorted(self.line_map.items())
         ]))
         
 cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_FunctionInfo_Type]:
@@ -142,10 +142,8 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
 #        self.children.append( ChildCall( child, delta ))
     def __unicode__( self ):
         seconds = self.time / float( 1000000 )
-        return u'%s %s:%s calls=%s cumtime=%ss avgtime=%s'%(
-            self.name,
-            self.file,
-            self.line,
+        return u'%s % 5i % 5.4fs % 5.4fs'%(
+            self.name.ljust(30),
             self.calls,
             seconds,
             seconds/self.calls
