@@ -211,8 +211,9 @@ cdef class Writer:
         written = fwrite( &local, sizeof(call_info), 1, self.calls_fd )
         if written != 1:
             raise RuntimeError( """Unable to write to file: %s"""%( self.calls_filename, ))
-    cdef write_lineinfo( self, uint16_t fileno, uint16_t lineno, uint32_t timestamp ):
+    cdef write_lineinfo( self, uint16_t thread, uint16_t fileno, uint16_t lineno, uint32_t timestamp ):
         cdef line_info local 
+        local.thread = thread 
         local.fileno = fileno 
         local.lineno = lineno 
         local.timestamp = timestamp
@@ -298,9 +299,8 @@ cdef class Profiler:
         
     cdef write_c_call( self, PyFrameObject frame, PyCFunctionObject * func ):
         cdef long id 
-        cdef int func_number
         cdef uint32_t ts = self.timestamp()
-        func_number = self.builtin_to_number( func )
+        cdef uint32_t func_number = self.builtin_to_number( func )
         self.writer.write_callinfo( self.thread_id( frame ), self.stack_depth(frame), func_number, ts)
         
     cdef write_return( self, PyFrameObject frame ):
@@ -315,7 +315,12 @@ cdef class Profiler:
         
     cdef write_line( self, PyFrameObject frame ):
         cdef uint32_t ts = self.timestamp()
-        self.writer.write_lineinfo( self.file_to_number( frame.f_code[0] ), frame.f_lineno, ts )
+        self.writer.write_lineinfo( 
+            self.thread_id( frame ), 
+            self.file_to_number( frame.f_code[0] ), 
+            frame.f_lineno, 
+            ts 
+        )
     
     # State introspection mechanisms
     cdef uint16_t thread_id( self, PyFrameObject frame ):
