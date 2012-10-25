@@ -67,14 +67,6 @@ __all__ = [
     'timer',
     'Profiler',
 ]
-# Numpy structure describing the format written to disk for this 
-# version of the profiler...
-CALLS_STRUCTURE = [
-    ('rectype','S1'),('thread','i4'),('function','<i4'),('timestamp','<L'),('stack_depth', '<i2'),
-]
-LINES_STRUCTURE = [
-    ('thread','i4'),('fileno','<i2'),('lineno','<i2'),('timestamp','<L')
-]
 
 def timer():
     return <long>hpTimer()
