@@ -31,6 +31,7 @@ cdef extern from 'Python.h':
     
     cdef void PyEval_SetProfile(Py_tracefunc func, object arg)
     cdef void PyEval_SetTrace(Py_tracefunc func, object arg)
+    cdef char * PyString_AsString(bytes string)
 
 cdef extern from 'pystate.h':
     object PyThreadState_GetDict()
@@ -73,9 +74,9 @@ CALLS_STRUCTURE = [
 LINES_STRUCTURE = [
     ('thread','i4'),('fileno','<i2'),('lineno','<i2'),('timestamp','<L')
 ]
-    
+
 def timer():
-    return hpTimer()
+    return <long>hpTimer()
 
 cdef class Writer:
     """Implements direct-to-file writing for the Profiler class
@@ -86,7 +87,7 @@ cdef class Writer:
         lines -- directory/lines.data
         calls -- directory/calls.data
     """
-    cdef public int version
+    cdef int version
     
     cdef public bytes directory
     cdef public bytes index_filename 
@@ -126,7 +127,7 @@ cdef class Writer:
         self.lines_fd = self.open_file( self.lines_filename )
         self.calls_fd = self.open_file( self.calls_filename )
         
-        self.opened = 1
+        self.opened = <int>1
     
     cdef FILE * open_file( self, bytes filename ):
         cdef FILE * fd 
@@ -134,7 +135,7 @@ cdef class Writer:
         if fd == NULL:
             raise IOError( "Unable to open output file: %s", filename )
         return fd
-    cdef write_short( self, int out, FILE * which ):
+    cdef write_short( self, short int out, FILE * which ):
         if self.opened:
             # assumes little-endian!
             written = fwrite( &out, 2, 1, which )
@@ -152,11 +153,10 @@ cdef class Writer:
             written = fwrite( &out, self.long_long_size, 1, which )
             if written != 1:
                 raise IOError( "Unable to write to output file" )
-    cdef write_string( self, object out, FILE * which ):
-        cdef char * temp = out 
+    cdef write_string( self, bytes out, FILE * which ):
+        cdef char * temp
         if self.opened:
-            if isinstance( out, unicode ):
-                out = out.encode( 'utf-8' )
+            temp = PyString_AsString( out )
             written = fwrite( temp, len(out), 1, which  )
             if written != 1:
                 raise IOError( "Unable to write to output file" )
@@ -170,7 +170,7 @@ cdef class Writer:
         message = b'P COLDSHOTBinary v%s '%( self.version, )
         self.write_string( message, self.index_fd )
         self.write_long_long( 1, self.index_fd )
-        self.write_string( '\n', self.index_fd )
+        self.write_string( b'\n', self.index_fd )
     
     def file( self, int fileno, bytes filename ):
         return self.write_file( fileno, filename )
@@ -324,7 +324,7 @@ cdef class Profiler:
     cdef write_line( self, PY_LONG_LONG ts, PyFrameObject frame ):
         self.writer.write_line( self.thread_id( frame ), frame.f_lineno, ts )
     
-    cdef public delta( self ):
+    cdef public PY_LONG_LONG delta( self ):
         """Calculate the delta since the last call to hpTimer(), store new value
         
         TODO: this discounting needs to be per-thread, but that isn't quite right 
@@ -343,7 +343,7 @@ cdef class Profiler:
             # cases where clock has gone backward e.g. multiprocessor weirdness
             delta = 0
         return self.internal_time
-    cdef public discount( self ):
+    cdef public PY_LONG_LONG discount( self ):
         """Discount the time since the last call to hpTimer()"""
         self.last_time = hpTimer()
         return self.internal_time

@@ -1,6 +1,11 @@
-coldshot/coldshot.so
 *.egg-info
 build
 .eric4project
 *.index
 *.profile
+coldshot/*.so
+coldshot/*.so
+coldshot/*.html
+coldshot/loader.c
+coldshot/profiler.c
+coldshot/profiler.h

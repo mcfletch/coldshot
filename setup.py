@@ -32,7 +32,18 @@ extensions = [
         ],
         include = ['coldshot'],
         depends=['python.pxd']
-    )
+    ),
+    Extension(
+        "coldshot.loader",
+        [
+            [
+                os.path.join( 'coldshot','loader.c' ),
+                os.path.join('coldshot','loader.pyx')
+            ][bool( have_cython )],
+        ],
+        include = ['coldshot'],
+        depends=['python.pxd']
+    ),
 ]
     
 version = [
@@ -61,10 +72,10 @@ if __name__ == "__main__":
             'build_ext': build_ext,
         }
     setup (
-        name = "ColdShot",
+        name = "Coldshot",
         version = version,
         url = "http://www.vrplumber.com/programming/runsnakerun/",
-        download_url = "http://pypi.python.org/pypi/ColdShot",
+        download_url = "http://pypi.python.org/pypi/Coldshot",
         description = "Python profiler using Hotshot like tracing",
         author = "Mike C. Fletcher",
         author_email = "mcfletch@vrplumber.com",
@@ -87,6 +98,7 @@ if __name__ == "__main__":
         entry_points = {
             'console_scripts': [
                 'coldshot = coldshot.externals:main',
+                'coldshot-report = coldshot.loader:main',
             ]
         },
         **extraArguments
