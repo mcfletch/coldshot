@@ -2,11 +2,7 @@
 """
 from cpython cimport PY_LONG_LONG
 import urllib, os, weakref
-
-cdef extern from "stdint.h":
-    ctypedef int int32_t
-    ctypedef int int16_t
-    ctypedef int int64_t
+from coldshot cimport *
 
 cdef extern from "frameobject.h":
     ctypedef int (*Py_tracefunc)(object self, PyFrameObject *py_frame, int what, object arg)
@@ -190,33 +186,6 @@ cdef class Writer:
             self.index_fd
         )
     
-    def call( self, threadno, funcno, ts, stack_depth ):
-        return self.write_call( threadno, funcno, ts, stack_depth )
-    cdef write_call( self, long threadno, int funcno, PY_LONG_LONG ts, int stack_depth ):
-        self.write_string( b'c', self.calls_fd )
-        self.write_long( threadno, self.calls_fd )
-        self.write_long( funcno, self.calls_fd )
-        self.write_long_long( ts, self.calls_fd )
-        self.write_short( stack_depth, self.calls_fd )
-    
-    def return_( self, threadno, fileno, lineno, ts, stack_depth ):
-        return self.write_return( threadno, fileno, lineno, ts, stack_depth )
-    cdef write_return( self, long threadno, int fileno, int lineno, PY_LONG_LONG ts, int stack_depth ):
-        self.write_string( b'r', self.calls_fd )
-        self.write_long( threadno, self.calls_fd )
-        self.write_short( fileno, self.calls_fd )
-        self.write_short( lineno, self.calls_fd )
-        self.write_long_long( ts, self.calls_fd )
-        self.write_short( stack_depth, self.calls_fd )
-    
-    def line( self, threadno, lineno, ts ):
-        return self.write_line( threadno, lineno, ts )
-    cdef write_line( self, long threadno, int lineno, PY_LONG_LONG ts ):
-        self.write_long( threadno, self.lines_fd )
-        self.write_short( 0, self.lines_fd )
-        self.write_short( lineno, self.lines_fd )
-        self.write_long_long( ts, self.lines_fd )
-    
     def flush( self ):
         fflush( self.index_fd )
         fflush( self.calls_fd )
@@ -232,6 +201,24 @@ cdef class Writer:
             fclose( self.lines_fd )
     def __dealloc__( self ):
         self._close()
+    
+    cdef write_callinfo( self, uint16_t thread, int16_t stack_depth, uint32_t function, uint32_t timestamp ):
+        cdef call_info local 
+        local.thread = thread 
+        local.stack_depth = stack_depth
+        local.function = function 
+        local.timestamp = timestamp
+        written = fwrite( &local, sizeof(call_info), 1, self.calls_fd )
+        if written != 1:
+            raise RuntimeError( """Unable to write to file: %s"""%( self.calls_filename, ))
+    cdef write_lineinfo( self, uint16_t fileno, uint16_t lineno, uint32_t timestamp ):
+        cdef line_info local 
+        local.fileno = fileno 
+        local.lineno = lineno 
+        local.timestamp = timestamp
+        written = fwrite( &local, sizeof(line_info), 1, self.lines_fd )
+        if written != 1:
+            raise RuntimeError( """Unable to write to file: %s"""%( self.lines_filename, ))
 
 cdef class Profiler:
     """Coldshot Profiler implementation 
@@ -248,8 +235,9 @@ cdef class Profiler:
     cdef public dict threads
     
     cdef public Writer writer
-    cdef public PY_LONG_LONG internal_time
-    cdef public PY_LONG_LONG last_time
+    cdef public PY_LONG_LONG internal_start
+    cdef public PY_LONG_LONG internal_discount
+    
     def __init__( self, dirname, version=1 ):
         self.writer = Writer( dirname, version )
         self.writer.prefix()
@@ -257,21 +245,21 @@ cdef class Profiler:
         self.functions = {}
         self.threads = {}
         
-    cdef int file_to_number( self, PyCodeObject code ):
+    cdef uint32_t file_to_number( self, PyCodeObject code ):
         """Convert a code reference to a file number"""
-        cdef int count
+        cdef uint32_t count
         filename = <object>(code.co_filename)
         if filename not in self.files:
             count = len( self.files ) + 1
             self.files[filename] = (count, filename)
             self.writer.write_file( count, filename )
             return count
-        return <int>(self.files[filename][0])
-    cdef int func_to_number( self, PyCodeObject code ):
+        return <uint32_t>(self.files[filename][0])
+    cdef uint32_t func_to_number( self, PyCodeObject code ):
         """Convert a function reference to a persistent function ID"""
         cdef tuple key 
         cdef bytes name
-        cdef int count
+        cdef uint32_t count
         cdef int fileno
         key = (<object>code.co_filename,<int>code.co_firstlineno)
         if key not in self.functions:
@@ -281,26 +269,57 @@ cdef class Profiler:
             self.functions[key] = (count, name)
             self.writer.write_func( count, fileno, code.co_firstlineno, name)
             return count
-        return <int>(self.functions[key][0])
-    cdef int builtin_to_number( self, PyCFunctionObject * func ):
+        return <uint32_t>(self.functions[key][0])
+    cdef uint32_t builtin_to_number( self, PyCFunctionObject * func ):
         """Convert a builtin-function reference to a persistent function ID
         
         Note: assumes that builtin function IDs (pointers) are persistent 
         and unique.
         """
         cdef long id 
-        cdef int count
+        cdef uint32_t count
         cdef bytes name
-        id = <long>func 
+        id = <long>func # ssize_t?
         if id not in self.functions:
             name = builtin_name( func[0] )
             count = len(self.functions) + 1
             self.functions[id] = (count, name)
             self.writer.write_func( count, 0, 0, name )
             return count
-        return <int>(self.functions[id][0])
-    cdef int thread_id( self, PyFrameObject frame ):
-        """Convert a thread ID into a persistent thread identifier"""
+        return <uint32_t>(self.functions[id][0])
+    
+    # Pass a formatted call onto the writer...
+    cdef write_call( self, PyFrameObject frame ):
+        cdef PyCodeObject code
+        cdef int func_number 
+        cdef uint32_t ts = self.timestamp()
+        func_number = self.func_to_number( frame.f_code[0] )
+        self.writer.write_callinfo( self.thread_id( frame ), self.stack_depth(frame), func_number, ts)
+        
+    cdef write_c_call( self, PyFrameObject frame, PyCFunctionObject * func ):
+        cdef long id 
+        cdef int func_number
+        cdef uint32_t ts = self.timestamp()
+        func_number = self.builtin_to_number( func )
+        self.writer.write_callinfo( self.thread_id( frame ), self.stack_depth(frame), func_number, ts)
+        
+    cdef write_return( self, PyFrameObject frame ):
+        cdef uint32_t ts = self.timestamp()
+        self.writer.write_callinfo( 
+            self.thread_id( frame ), 
+            # NOTE the - here!
+            -self.stack_depth(frame),
+            self.func_to_number( frame.f_code[0] ), 
+            ts
+        )
+        
+    cdef write_line( self, PyFrameObject frame ):
+        cdef uint32_t ts = self.timestamp()
+        self.writer.write_lineinfo( self.file_to_number( frame.f_code[0] ), frame.f_lineno, ts )
+    
+    # State introspection mechanisms
+    cdef uint16_t thread_id( self, PyFrameObject frame ):
+        """Extract thread_id and convert to a 16-bit integer..."""
         cdef long id 
         cdef int count
         id = <long>frame.f_tstate.thread_id
@@ -309,27 +328,18 @@ cdef class Profiler:
             self.threads[id] = count 
             return <int>count
         return self.threads[id]
+    cdef int16_t stack_depth( self, PyFrameObject frame ):
+        """Count stack-depth for the given frame
         
-    cdef write_call( self, PY_LONG_LONG ts, PyFrameObject frame, int stack_depth ):
-        cdef PyCodeObject code
-        cdef int func_number 
-        func_number = self.func_to_number( frame.f_code[0] )
-        self.writer.write_call( self.thread_id( frame ), func_number, ts, stack_depth)
-    cdef write_c_call( self, PY_LONG_LONG ts, PyFrameObject frame, PyCFunctionObject * func, int stack_depth ):
-        cdef long id 
-        cdef int func_number
-        func_number = self.builtin_to_number( func )
-        self.writer.write_call( self.thread_id( frame ), func_number, ts, stack_depth)
-
-    cdef write_return( self, PY_LONG_LONG ts, PyFrameObject frame, int stack_depth ):
-        code = frame.f_code[0]
-        fileno = self.file_to_number( code )
-        lineno = code.co_firstlineno
-        self.writer.write_return( self.thread_id( frame ), fileno, lineno, ts, stack_depth )
-    cdef write_line( self, PY_LONG_LONG ts, PyFrameObject frame ):
-        self.writer.write_line( self.thread_id( frame ), frame.f_lineno, ts )
-    
-    cdef public PY_LONG_LONG delta( self ):
+        Note: limited to unsigned short int depth
+        """
+        cdef int16_t depth
+        depth = 1
+        while frame.f_back != NULL:
+            depth += 1
+            frame = frame.f_back[0]
+        return depth
+    cdef public uint32_t timestamp( self ):
         """Calculate the delta since the last call to hpTimer(), store new value
         
         TODO: this discounting needs to be per-thread, but that isn't quite right 
@@ -337,28 +347,20 @@ cdef class Profiler:
         versus GIL-locked (if it's locked, we should discount, otherwise we should 
         not).
         """
-        cdef PY_LONG_LONG current
         cdef PY_LONG_LONG delta
         current = hpTimer()
-        if current > self.last_time:
-            delta = current - self.last_time
-            self.internal_time += delta 
-            self.last_time = current
-        else:
-            # cases where clock has gone backward e.g. multiprocessor weirdness
-            delta = 0
-        return self.internal_time
-    cdef public PY_LONG_LONG discount( self ):
+        return <uint32_t>( current - self.internal_start - self.internal_discount)
+    cdef public PY_LONG_LONG discount( self, PY_LONG_LONG delta ):
         """Discount the time since the last call to hpTimer()"""
-        self.last_time = hpTimer()
-        return self.internal_time
+        self.internal_discount += delta 
+        return self.internal_discount
     
     def start( self ):
         """Install this profiler as the trace function for the interpreter"""
+        self.internal_discount = 0
+        self.internal_start = hpTimer()
         PyEval_SetProfile(profile_callback, self)
         PyEval_SetTrace(trace_callback, self)
-        self.internal_time = 0
-        self.discount()
     def stop( self ):
         """Remove the currently installed profiler (even if it is not us)"""
         coldshot_unset_profile()
@@ -394,18 +396,6 @@ cdef bytes builtin_name( PyCFunctionObject func ):
     func_name = func.m_ml[0].ml_name
     return b'<%s.%s>'%(mod_name,func_name)
 
-cdef short unsigned int _stack_depth( PyFrameObject * frame ):
-    """Count stack-depth for the given frame
-    
-    Note: limited to unsigned short int depth
-    """
-    cdef short unsigned int depth
-    depth = 1
-    while frame[0].f_back != NULL:
-        depth += 1
-        frame = frame[0].f_back
-    return depth
-
 cdef int trace_callback(
     object self,
     PyFrameObject *frame,
@@ -418,10 +408,8 @@ cdef int trace_callback(
     events, which seems wrong/silly
     """
     cdef Profiler profiler = <Profiler>self
-    ts = profiler.delta()
     if what == PyTrace_LINE:
-        profiler.write_line( ts, frame[0] )
-    profiler.discount()
+        profiler.write_line( frame[0] )
     return 0
     
 cdef int profile_callback(
@@ -433,18 +421,11 @@ cdef int profile_callback(
     """Callback for profile (call/return, include C call/return) operations"""
     cdef int stack_depth
     cdef Profiler profiler = <Profiler>self
-    
-    ts = profiler.delta()
-    stack_depth = _stack_depth( frame )
-    
     if what == PyTrace_CALL:
-        profiler.write_call( ts, frame[0], stack_depth )
+        profiler.write_call( frame[0] )
     elif what == PyTrace_C_CALL:
         if PyCFunction_Check( arg ):
-            profiler.write_c_call( ts, frame[0], <PyCFunctionObject *>arg, stack_depth )
+            profiler.write_c_call( frame[0], <PyCFunctionObject *>arg )
     elif what == PyTrace_RETURN or what == PyTrace_C_RETURN:
-        profiler.write_return( ts, frame[0], stack_depth )
-    # discount the time during the profiler callback,
-    # though this means multi-threaded operations may go backward in time...
-    profiler.discount()
+        profiler.write_return( frame[0] )
     return 0
