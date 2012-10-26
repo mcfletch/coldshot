@@ -9,3 +9,4 @@ coldshot/*.html
 coldshot/loader.c
 coldshot/profiler.c
 coldshot/profiler.h
+coldshot/loader.h
