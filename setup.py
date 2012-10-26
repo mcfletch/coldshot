@@ -99,6 +99,8 @@ if __name__ == "__main__":
             'console_scripts': [
                 'coldshot = coldshot.externals:profile',
                 'coldshot-report = coldshot.externals:report',
+                'coldshot-lines = coldshot.externals:raw_lines',
+                'coldshot-calls = coldshot.externals:raw_calls',
             ]
         },
         **extraArguments
