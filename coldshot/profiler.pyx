@@ -51,6 +51,7 @@ cdef extern from 'frameobject.h':
         PyCodeObject *f_code
         PyThreadState *f_tstate
         PyFrameObject *f_back
+        void * f_globals
         int f_lineno
 
 # timers, from line_profiler
@@ -133,14 +134,14 @@ cdef class LinesWriter( DataWriter ):
     including packing/alignment natural for the platform.  That may change 
     going forward.
     """
-    def write( self, thread, fileno, lineno, timestamp ):
-        return self.write_lineinfo( thread, fileno, lineno, timestamp )
-    cdef write_lineinfo( self, uint16_t thread, uint16_t fileno, uint16_t lineno, uint32_t timestamp ):
+    def write( self, thread, funcno, lineno, timestamp ):
+        return self.write_lineinfo( thread, funcno, lineno, timestamp )
+    cdef write_lineinfo( self, uint16_t thread, uint16_t funcno, uint16_t lineno, uint32_t timestamp ):
         if not self.opened:
             raise RuntimeError( """Attempt to write to closed file %s"""%( self.filename, ))
         cdef line_info local 
         local.thread = thread 
-        local.fileno = fileno 
+        local.funcno = funcno
         local.lineno = lineno 
         local.timestamp = timestamp
         written = fwrite( &local, sizeof(line_info), 1, self.fd )
@@ -170,7 +171,7 @@ cdef class IndexWriter(object):
         
             Declares a file number for line traces and function identification
         
-        f 34 <fileno> <lineno> <functionname>
+        f 34 <fileno> <lineno> <module> <functionname>
         
             Declares a function number, builtin functions will always have 
             fileno:lineno of 0:0
@@ -207,9 +208,10 @@ cdef class IndexWriter(object):
     def write_file( self, fileno, filename ):
         message = b'F %d %s\n'%( fileno, urllib.quote( filename ))
         self.fh.write( message )
-    def write_func( self, funcno, fileno, lineno, bytes name ):
+    def write_func( self, funcno, fileno, lineno, bytes module, bytes name ):
         name = urllib.quote( name )
-        message = b'f %(funcno)d %(fileno)d %(lineno)d %(name)s\n'%locals()
+        module = urllib.quote( module )
+        message = b'f %(funcno)d %(fileno)d %(lineno)d %(module)s %(name)s\n'%locals()
         self.fh.write( message )
     def flush( self ):
         self.fh.flush()
@@ -280,19 +282,25 @@ cdef class Profiler:
             self.index.write_file( count, filename )
             return count
         return <uint32_t>(self.files[filename][0])
-    cdef uint32_t func_to_number( self, PyCodeObject code ):
+    cdef uint32_t func_to_number( self, PyFrameObject frame ):
         """Convert a function reference to a persistent function ID"""
+        cdef PyCodeObject code = frame.f_code[0]
         cdef tuple key 
         cdef bytes name
+        cdef bytes module 
         cdef uint32_t count
         cdef int fileno
         key = (<object>code.co_filename,<int>code.co_firstlineno)
         if key not in self.functions:
             fileno = self.file_to_number( code )
-            name = b'%s.%s'%(<object>code.co_filename,<object>code.co_name)
+            try:
+                module = (<object>frame.f_globals)['__name__']
+            except KeyError as err:
+                module = <bytes>code.co_filename
+            name = <bytes>(code.co_name)
             count = len(self.functions)+1
             self.functions[key] = (count, name)
-            self.index.write_func( count, fileno, code.co_firstlineno, name)
+            self.index.write_func( count, fileno, code.co_firstlineno, module, name)
             return count
         return <uint32_t>(self.functions[key][0])
     cdef uint32_t builtin_to_number( self, PyCFunctionObject * func ):
@@ -304,12 +312,14 @@ cdef class Profiler:
         cdef long id 
         cdef uint32_t count
         cdef bytes name
+        cdef bytes module 
         id = <long>func # ssize_t?
         if id not in self.functions:
             name = builtin_name( func[0] )
+            module = module_name( func[0] )
             count = len(self.functions) + 1
-            self.functions[id] = (count, name)
-            self.index.write_func( count, 0, 0, name )
+            self.functions[id] = (count, module, name)
+            self.index.write_func( count, 0, 0, module, name )
             return count
         return <uint32_t>(self.functions[id][0])
     
@@ -318,7 +328,7 @@ cdef class Profiler:
         cdef PyCodeObject code
         cdef int func_number 
         cdef uint32_t ts = self.timestamp()
-        func_number = self.func_to_number( frame.f_code[0] )
+        func_number = self.func_to_number( frame )
         self.calls.write_callinfo( self.thread_id( frame ), self.stack_depth(frame), func_number, ts)
         
     cdef write_c_call( self, PyFrameObject frame, PyCFunctionObject * func ):
@@ -333,7 +343,7 @@ cdef class Profiler:
             self.thread_id( frame ), 
             # NOTE the - here!
             -self.stack_depth(frame),
-            self.func_to_number( frame.f_code[0] ), 
+            self.func_to_number( frame ), 
             ts
         )
         
@@ -341,7 +351,7 @@ cdef class Profiler:
         cdef uint32_t ts = self.timestamp()
         self.lines.write_lineinfo( 
             self.thread_id( frame ), 
-            self.file_to_number( frame.f_code[0] ), 
+            self.func_to_number( frame ), 
             frame.f_lineno, 
             ts 
         )
@@ -413,7 +423,7 @@ cdef bytes module_name( PyCFunctionObject func ):
     if func.m_self != NULL:
         # is a method, use the type's name as the key...
         local_mod = (<object>func.m_self).__class__
-        return b'%s.%s'%(local_mod.__module__,local_mod.__class__.__name__)
+        return b'%s.%s'%(local_mod.__module__,local_mod.__name__)
     else:
         if func.m_module != NULL:
             local_mod = <object>func.m_module
@@ -427,11 +437,8 @@ cdef bytes module_name( PyCFunctionObject func ):
             # func.m_module == NULL
             return b'__builtin__'
 cdef bytes builtin_name( PyCFunctionObject func ):
-    cdef object mod_name 
-    cdef object func_name 
-    mod_name = module_name( func )
     func_name = func.m_ml[0].ml_name
-    return b'<%s.%s>'%(mod_name,func_name)
+    return func_name
 
 cdef int trace_callback(
     object self,

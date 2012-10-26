@@ -13,8 +13,8 @@ class TestProfiler( TestCase ):
         self.profiler.stop()
         shutil.rmtree( self.test_dir, True )
         
-    def test_create( self ):
-        pass 
+    def test_test_setup( self ):
+        pass
     def test_start( self ):
         self.profiler.start()
         blah()
@@ -22,13 +22,17 @@ class TestProfiler( TestCase ):
         load = loader.Loader( self.test_dir )
         load.load()
         assert load.files
-        assert len(load.files) == 1, load.files 
+        
+        this_file = load.files[1]
         
         assert load.functions 
-        assert len(load.functions) == 2, load.functions # expected blah() and stop()
         for funcno, funcinfo in load.functions.items():
             assert funcinfo.name 
-            assert funcinfo.calls
+        this_key = ('tests.test_profiler','blah')
+        assert this_key in load.function_names, load.function_names.keys()
+        blah_func = load.function_names[this_key]
+        assert blah_func.calls == 1
+        assert blah_func.time
 
     def test_c_calls( self ):
         x = []
@@ -42,5 +46,6 @@ class TestProfiler( TestCase ):
         load = loader.Loader( self.test_dir )
         load.load()
         assert load.functions 
-        assert len(load.functions) == 2, load.functions 
+        assert ('__builtin__','range') in load.function_names, load.function_names.keys()
+        assert ('__builtin__.list','append') in load.function_names, load.function_names.keys()
     

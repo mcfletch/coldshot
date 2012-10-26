@@ -20,7 +20,7 @@ cdef struct call_info:
     uint32_t timestamp
 cdef struct line_info:
     uint16_t thread
-    uint16_t fileno
+    uint16_t funcno
     uint16_t lineno
     #uint32_t function
     uint32_t timestamp

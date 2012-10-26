@@ -1,6 +1,6 @@
 """Top level (mainloop-like) operation"""
-from . import profiler, loader
-import tempfile, atexit
+from . import profiler, loader, reporter
+import tempfile, atexit, sys
 
 __all__ = ('run','runctx')
 
@@ -76,7 +76,8 @@ def profile():
 
 def report():
     """Load the data-set and print the basic report"""
-    reporter = loader.Loader( sys.argv[1] )
-    reporter.load()
-    reporter.print_report()
+    load = loader.Loader( sys.argv[1] )
+    load.load()
+    report = reporter.Reporter( load )
+    print report.report()
     return 0

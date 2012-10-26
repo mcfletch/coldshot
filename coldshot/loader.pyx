@@ -76,7 +76,7 @@ cdef class ChildCall:
         self.id = id 
         self.time = time 
 
-cdef public class FileLineInfo [object Coldshot_FileLineInfo, type Coldshot_FileLineInfo_Type]:
+cdef public class FunctionLineInfo [object Coldshot_FunctionLineInfo, type Coldshot_FunctionLineInfo_Type]:
     cdef public uint16_t lineno 
     cdef public uint32_t time 
     cdef public uint32_t count
@@ -87,46 +87,58 @@ cdef public class FileLineInfo [object Coldshot_FileLineInfo, type Coldshot_File
     cdef add_time( self, uint32_t delta ):
         self.time += delta 
         self.count += 1
+    
 cdef public class FileInfo [object Coldshot_FileInfo, type Coldshot_FileInfo_Type]:
     cdef object filename 
     cdef uint16_t fileno 
-    cdef object line_map 
     def __cinit__( self, filename, fileno ):
         self.filename = filename 
         self.fileno = fileno 
-        self.line_map = {}
-    def info_for_line( self, uint16_t line ):
-        """Get/create FileLineInfo for given line"""
-        line_object = self.line_map.get( line )
-        if line_object is None:
-            self.line_map[line] = line_object = FileLineInfo( line )
-        return line_object
     def __unicode__( self ):
-        return """File: %s\n%s"""%( self.filename, '\n'.join([
-            '% 5i: % 8i % 8.4fs'%( x.lineno, x.count, x.time/1000000. )
-            for (k,x) in sorted(self.line_map.items())
-        ]))
+        return '<%s for %s>'%( self.__class__.__name__, self.filename )
+    __repr__ = __unicode__
         
 cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_FunctionInfo_Type]:
+    """Represents call/trace information for a single function
+    
+    Attributes of note:
+    
+        id -- ID used in the trace 
+        module -- name of the module and class (x.y.z)
+        name -- name of the function/method
+        file -- FileInfo for the module, note: builtins all use the same FileInfo
+        line -- line on which the function begins 
+        
+        calls -- count of calls on the function 
+        time -- cumulative time spent in the function
+        line_map -- lineno: FunctionLineInfo mapping for each line executed
+    """
     cdef public short int id
+    cdef public str module 
     cdef public str name 
-    cdef public short int file 
+    cdef public FileInfo file
     cdef public short int line
-    cdef public list children
     
     cdef public long calls 
-    cdef public long recursive_calls
+    cdef public long recursive_calls # TODO
     cdef public long local_time
     cdef public long time
     
-    def __cinit__( self, short int id, str name, short int file, short int line ):
+    cdef public object line_map 
+    cdef public list children # TODO
+    
+    def __cinit__( self, short int id, str module, str name, FileInfo file, short int line ):
         self.id = id
+        self.module = module 
         self.name = name 
         self.file = file
         self.line = line
         self.calls = 0
         self.recursive_calls = 0
+        
+        self.line_map = {}
         self.children = []
+    
     cdef record_call( self ):
         """Increment our internal call counter"""
         self.calls += 1
@@ -140,6 +152,12 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
 #            if my_child.id == child:
 #                my_child.time += delta 
 #        self.children.append( ChildCall( child, delta ))
+    def info_for_line( self, uint16_t line ):
+        """Get/create FunctionLineInfo for given line"""
+        line_object = self.line_map.get( line )
+        if line_object is None:
+            self.line_map[line] = line_object = FunctionLineInfo( line )
+        return line_object
     def __unicode__( self ):
         seconds = self.time / float( 1000000 )
         return u'%s % 5i % 5.4fs % 5.4fs'%(
@@ -149,8 +167,9 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
             seconds/self.calls
         )
     def __repr__( self ):
-        return '<%s %s %s:%ss>'%(
+        return '<%s %s:%s %s:%ss>'%(
             self.__class__.__name__,
+            self.module,
             self.name,
             self.calls,
             self.time/float(1000000),
@@ -186,6 +205,7 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         self.file_names = {}
         self.functions = {}
         self.function_names = {}
+        self.file_names['__builtin__'] = self.files[0] = FileInfo( '__builtin__', 0 )
 
     def load( self ):
         """Scan our data-files for basic index information"""
@@ -207,15 +227,21 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                 fileno,filename = line[1:3]
                 fileno = int(fileno)
                 filename = self.unquote( filename )
-                self.files[fileno] = FileInfo( filename, fileno )
-                self.file_names[filename] = fileno
+                self.file_names[filename] = self.files[fileno] = FileInfo( filename, fileno )
             elif line[0] == 'f':
                 # function/built-in declaration
-                funcno,fileno,lineno,name = line[1:5]
+                try:
+                    funcno,fileno,lineno,module,name = line[1:6]
+                except Exception as err:
+                    err.args += (line,)
+                    raise
                 funcno,fileno,lineno = int(funcno),int(fileno),int(lineno)
+                
+                module = self.unquote( module )
                 name = self.unquote( name )
-                self.functions[ funcno ] = FunctionInfo( funcno,name,fileno,lineno )
-                self.function_names[ name ] = funcno
+                self.function_names[ (module,name) ] = self.functions[ funcno ] = FunctionInfo( 
+                    funcno,module,name,self.files[fileno],lineno 
+                )
             elif line[0] == 'D':
                 # data-file declaration...
                 if line[1] == 'calls':
@@ -268,8 +294,8 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         cdef LinesFile lines_data = LinesFile( lines_filename )
         cdef object thread_object
         cdef ThreadTimeInfo thread_info
-        cdef FileInfo file_info 
-        cdef FileLineInfo line_info_c
+        cdef FunctionInfo function_info 
+        cdef FunctionLineInfo line_info_c
         
         cdef uint16_t current_thread
         cdef uint16_t thread
@@ -291,15 +317,9 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                     thread_info = <ThreadTimeInfo>thread_object
             if i > 0:
                 assert thread_info.last_record
-                line_info_c = (<FileLineInfo>(thread_info.last_record))
+                line_info_c = (<FunctionLineInfo>(thread_info.last_record))
                 delta = thread_info.line_ts( timestamp )
                 line_info_c.add_time( delta )
-            file_info = <FileInfo>(self.files[ lines_data.records[i].fileno ])
-            thread_info.set_last_line( file_info.info_for_line( lines_data.records[i].lineno ) )
+            function_info = <FunctionInfo>(self.functions[ lines_data.records[i].funcno ])
+            thread_info.set_last_line( function_info.info_for_line( lines_data.records[i].lineno ) )
     
-    def print_report( self ):
-        for funcinfo in self.functions.values():
-            print unicode( funcinfo )
-        for name,id in sorted(self.file_names.items()):
-            print unicode( self.files[id] )
-
