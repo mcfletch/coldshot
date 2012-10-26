@@ -164,9 +164,9 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
     
     def __cinit__( self, directory ):
         self.directory = directory
-        self.index_filename = os.path.join( directory, profiler.Writer.INDEX_FILENAME )
-        self.calls_filename = os.path.join( directory, profiler.Writer.CALLS_FILENAME )
-        self.lines_filename = os.path.join( directory, profiler.Writer.LINES_FILENAME )
+        self.index_filename = os.path.join( directory, profiler.Profiler.INDEX_FILENAME )
+        self.calls_filename = os.path.join( directory, profiler.Profiler.CALLS_FILENAME )
+        self.lines_filename = os.path.join( directory, profiler.Profiler.LINES_FILENAME )
         
         
         
