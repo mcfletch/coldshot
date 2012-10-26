@@ -50,9 +50,9 @@ cdef class FunctionCallInfo:
     def __cinit__( self, FunctionInfo function, uint32_t start ):
         self.function = function 
         self.start = start 
-        function.record_call()
     cdef public uint32_t record_stop( self, uint32_t stop ):
         cdef uint32_t delta = stop - self.start 
+        self.function.record_call()
         self.function.record_time_spent( delta )
         return delta
 cdef class ThreadTimeInfo:

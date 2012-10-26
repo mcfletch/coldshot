@@ -36,9 +36,11 @@ class TestProfiler( TestCase ):
 
     def test_c_calls( self ):
         x = []
+        y = []
         self.profiler.start()
         for i in range(200):
             x.append( i )
+            y.append( i )
         self.profiler.stop()
         assert self.profiler.files
         assert self.profiler.functions
@@ -48,4 +50,6 @@ class TestProfiler( TestCase ):
         assert load.functions 
         assert ('__builtin__','range') in load.function_names, load.function_names.keys()
         assert ('__builtin__.list','append') in load.function_names, load.function_names.keys()
+        list_append = load.function_names[('__builtin__.list','append')]
+        assert list_append.calls == 400, list_append.calls
     
