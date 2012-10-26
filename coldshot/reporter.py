@@ -1,3 +1,5 @@
+from .loader import SECONDS_FACTOR
+
 class Reporter( object ):
     def __init__( self, loader, sort=('-time','module','name' )):
         self.loader = loader 
@@ -19,14 +21,20 @@ class Reporter( object ):
         COLSET = ['module','name','time','calls']
         header = '%s %s %s %s'%('Namespace'.rjust(30),'Name'.ljust(20),'Cumtime'.ljust(12),'Calls'.ljust(9))
         report = [ header, '' ]
-        divisor = float(1000000)
         for function in functions:
             if function.time:
-                report.append('''%s %s % 8.4f % 8d'''%(
+                report.append('''%s:%s %s % 8.4f % 8d'''%(
                     function.module[-30:].rjust(30),
+                    str(function.line).ljust(4),
                     function.name.ljust(20),
-                    function.time/divisor,
+                    function.time/SECONDS_FACTOR,
                     function.calls,
                 ))
+                for (line,lineinfo) in sorted(function.line_map.items()):
+                    report.append( '    % 5d % 8.4f % 8d'%(
+                        lineinfo.line,
+                        lineinfo.time/SECONDS_FACTOR,
+                        lineinfo.calls,
+                    ))
         return '\n'.join( report )
     
