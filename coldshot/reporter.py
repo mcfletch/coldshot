@@ -17,7 +17,7 @@ class Reporter( object ):
         functions = self.loader.functions.values()
         functions.sort( key=self.sort )
         COLSET = ['module','name','time','calls']
-        header = '%s %s %s %s'%('Namespace'.rjust(30),'Name'.ljust(20),'Cumtime'.rjust(12),'Calls'.rjust(9))
+        header = '%s %s %s %s'%('Namespace'.rjust(30),'Name'.ljust(20),'Cumtime'.ljust(12),'Calls'.ljust(9))
         report = [ header, '' ]
         divisor = float(1000000)
         for function in functions:
