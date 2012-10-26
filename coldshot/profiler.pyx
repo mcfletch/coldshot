@@ -63,6 +63,9 @@ cdef extern from 'lowlevel.h':
     void coldshot_unset_trace()
     void coldshot_unset_profile()
 
+LINE_INFO_SIZE = sizeof( line_info )
+CALL_INFO_SIZE = sizeof( call_info )
+    
 __all__ = [
     'timer',
     'Profiler',
@@ -110,7 +113,11 @@ cdef class CallsWriter( DataWriter ):
     including packing/alignment natural for the platform.  That may change 
     going forward.
     """
+    def write( self, thread, stack_depth, function, timestamp ):
+        return self.write_callinfo( thread, stack_depth, function, timestamp )
     cdef write_callinfo( self, uint16_t thread, int16_t stack_depth, uint32_t function, uint32_t timestamp ):
+        if not self.opened:
+            raise RuntimeError( """Attempt to write to closed file %s"""%( self.filename, ))
         cdef call_info local 
         local.thread = thread 
         local.stack_depth = stack_depth
@@ -126,7 +133,11 @@ cdef class LinesWriter( DataWriter ):
     including packing/alignment natural for the platform.  That may change 
     going forward.
     """
+    def write( self, thread, fileno, lineno, timestamp ):
+        return self.write_lineinfo( thread, fileno, lineno, timestamp )
     cdef write_lineinfo( self, uint16_t thread, uint16_t fileno, uint16_t lineno, uint32_t timestamp ):
+        if not self.opened:
+            raise RuntimeError( """Attempt to write to closed file %s"""%( self.filename, ))
         cdef line_info local 
         local.thread = thread 
         local.fileno = fileno 
@@ -136,19 +147,54 @@ cdef class LinesWriter( DataWriter ):
         if written != 1:
             raise RuntimeError( """Unable to write to file: %s"""%( self.filename, ))
 
-cdef class Index(object):
-    """Writes the (plain-text) index to a standard Python file"""
+cdef class IndexWriter(object):
+    """Writes the (plain-text) index to a standard Python file
+    
+    Record types written:
+    
+        P COLDSHOTBinary v<version> byteswap=<boolean>
+        
+            Prefix record, declares version, byteswap=True means the file 
+            was written on a big-endian machine (currently ignored, which 
+            means profiles are not portable across architectures)
+        
+        D calls <filename>
+        
+            Declares a calls file to be loaded by the loader.
+            
+        D lines <filename>
+        
+            Declares a line-trace file to be loaded by the loader.
+        
+        F 23 <filename>
+        
+            Declares a file number for line traces and function identification
+        
+        f 34 <fileno> <lineno> <functionname>
+        
+            Declares a function number, builtin functions will always have 
+            fileno:lineno of 0:0
+    
+    Formatting:
+    
+        numbers are written in base 10 str() representations
+        
+        strings are written in urllib.quote()'d form
+    """
     cdef object fh
+    cdef int should_close # note: means "we should close it", not "has been opened"
     def __init__( self, file ):
-        """Open the index 
+        """Open the IndexWriter
         
         file -- if a str/bytes object, then open that file, otherwise use 
             file as a writeable object 
         """
         if isinstance( file, (bytes,unicode)):
             self.fh = open( file, 'wb' )
+            self.should_close = 1
         else:
             self.fh = file 
+            self.should_close = 0
     def prefix( self, version=1 ):
         """Write our version prefix to the data-file"""
         message = b'P COLDSHOTBinary v%d byteswap=%s\n'%( version, sys.byteorder=='big' )
@@ -167,6 +213,9 @@ cdef class Index(object):
         self.fh.write( message )
     def flush( self ):
         self.fh.flush()
+    def close( self ):
+        if self.should_close:
+            self.fh.close()
     
 cdef class Profiler:
     """Coldshot Profiler implementation 
@@ -182,12 +231,14 @@ cdef class Profiler:
     cdef public dict functions
     cdef public dict threads
     
-    cdef public Index index
+    cdef public IndexWriter index
     cdef public CallsWriter calls 
     cdef public LinesWriter lines 
     
     cdef public PY_LONG_LONG internal_start
     cdef public PY_LONG_LONG internal_discount
+    
+    cdef int active
     
     INDEX_FILENAME = b'index.profile'
     CALLS_FILENAME = b'calls.data'
@@ -202,17 +253,22 @@ cdef class Profiler:
         """
         if isinstance( dirname, unicode ):
             dirname = dirname.encode( 'utf-8' )
-        self.index = Index( os.path.join( dirname, self.INDEX_FILENAME ) )
-        self.calls = CallsWriter( os.path.join( dirname, self.CALLS_FILENAME ))
+        self.index = IndexWriter( os.path.join( dirname, self.INDEX_FILENAME ) )
+        self.index.prefix(version=version)
+        calls_filename = os.path.join( dirname, self.CALLS_FILENAME )
+        self.calls = CallsWriter( calls_filename )
+        self.index.write_datafile( calls_filename, 'calls' )
         if lines:
-            self.lines = LinesWriter( os.path.join( dirname, self.LINES_FILENAME ) )
+            lines_filename = os.path.join( dirname, self.LINES_FILENAME )
+            self.lines = LinesWriter( lines_filename )
+            self.index.write_datafile( lines_filename, 'lines' )
         else:
             self.lines = None
-        self.index.prefix(version=version)
         
         self.files = {}
         self.functions = {}
         self.threads = {}
+        self.active = False
         
     cdef uint32_t file_to_number( self, PyCodeObject code ):
         """Convert a code reference to a file number"""
@@ -331,14 +387,22 @@ cdef class Profiler:
     # External api
     def start( self ):
         """Install this profiler as the trace function for the interpreter"""
+        if self.active:
+            return 
+        self.active = True
         self.internal_discount = 0
         self.internal_start = hpTimer()
         PyEval_SetProfile(profile_callback, self)
-        PyEval_SetTrace(trace_callback, self)
+        if self.lines is not None:
+            PyEval_SetTrace(trace_callback, self)
     def stop( self ):
         """Remove the currently installed profiler (even if it is not us)"""
+        if not self.active:
+            return 
+        self.active = False
         coldshot_unset_profile()
-        coldshot_unset_trace()
+        if self.lines is not None:
+            coldshot_unset_trace()
         self.index.flush()
         self.calls.flush()
         if self.lines:

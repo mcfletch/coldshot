@@ -1,56 +1,47 @@
 from unittest import TestCase
-from coldshot.profiler import Writer
-import tempfile, shutil, os, threading, gc, time
-
-def thread(tpw):
-    print 'registering'
-    tpw.register()
-    print 'registered'
+from coldshot import profiler, loader
+import tempfile, shutil, os
 
 class TestWriter( TestCase ):
     def setUp( self ):
         self.test_dir = tempfile.mkdtemp( prefix = 'coldshot-test' )
-        self.writer = Writer( self.test_dir, 1 )
         
     def tearDown( self ):
-        self.writer.close()
         shutil.rmtree( self.test_dir, True )
     
-    def assert_calls_written( self, *expected ):
-        return self._base_was_written( self.writer.calls_filename, expected )
-    def assert_lines_written( self, *expected ):
-        return self._base_was_written( self.writer.lines_filename, expected )
-    def assert_index_written( self, *expected ):
-        return self._base_was_written( self.writer.index_filename, expected )
+    def test_calls_writer( self ):
+        """Test that calls writer can write records as expected"""
+        datafile = os.path.join( self.test_dir, 'test_calls_writer' )
+        cw = profiler.CallsWriter( datafile )
+        cw.write( 8, 14, 23, 85 )
+        cw.close()
+        content = open( datafile,'rb' ).read()
+        assert chr(8) in content, content 
+        assert chr( 14 ) in content, content 
+        assert chr( 23 ) in content, content 
+        assert chr( 85 ) in content, content 
+        assert len(content) == profiler.CALL_INFO_SIZE, content 
+    def test_lines_writer( self ):
+        datafile = os.path.join( self.test_dir, 'test_lines_writer' )
+        lw = profiler.LinesWriter( datafile )
+        lw.write( 8, 14, 23, 85 )
+        lw.close()
+        content = open( datafile,'rb' ).read()
+        assert chr(8) in content, content 
+        assert chr( 14 ) in content, content 
+        assert chr( 23 ) in content, content 
+        assert chr( 85 ) in content, content 
+        assert len(content) == profiler.LINE_INFO_SIZE, content 
 
-    def _base_was_written( self, filename, expected ):
-        output = open( filename ).read()
-        expected = ''.join( expected )
-        output = output.decode( 'latin-1' )
-        assert output == expected, (expected, output)
-    def test_prefix( self ):
-        self.writer.prefix( )
-        self.writer.close()
-        # TODO: make test 32-bit and big-endian friendly...
-        self.assert_index_written( u'P COLDSHOTBinary v1 \x01\x00\x00\x00\x00\x00\x00\x00\n' )
-    
-    def test_file( self ):
-        self.writer.file( 23, 'Boo hoo' )
-        self.writer.close()
-        self.assert_index_written( b'F 23 Boo%20hoo\n' )
-    def test_func( self ):
-        self.writer.func( 8, 23, 25, 'funcname' )
-        self.writer.close()
-        self.assert_index_written( b'f 8 23 25 funcname\n' )
-    def test_call( self ):
-        self.writer.call( 2, 1, 1, 5 )
-        self.writer.close()
-        self.assert_calls_written( b'c\x02\x00\x00\x00\x01\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x05\x00' )
-    def test_return( self ):
-        self.writer.return_( 2, 1,2, 1, 5 )
-        self.writer.close()
-        self.assert_calls_written( b'r\x02\x00\x00\x00\x01\x00\x02\x00\x01\x00\x00\x00\x00\x00\x00\x00\x05\x00' )
-    def test_line( self ):
-        self.writer.line( 2, 25, 1 )
-        self.writer.close()
-        self.assert_lines_written( b'\x02\x00\x00\x00\x00\x00\x19\x00\x01\x00\x00\x00\x00\x00\x00\x00' )
+    def test_index_writer( self ):
+        datafile = os.path.join( self.test_dir, 'test_index_writer' )
+        iw = profiler.IndexWriter( datafile )
+        iw.prefix( version=3 )
+        iw.close()
+        content = open( datafile,'rb' ).read()
+        split = content.split()
+        assert split[0] == 'P'
+        assert split[2] == 'v3'
+        assert split[3] == 'byteswap=False', """Coldshot has not yet been tested on big-endian platforms"""
+        
+        

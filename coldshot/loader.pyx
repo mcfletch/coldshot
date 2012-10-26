@@ -1,8 +1,8 @@
 """Module providing a Numpy-based loader for coldshot profiles"""
-import os, urllib, sys
+import os, urllib, sys, mmap, logging
 from . import profiler
-import os, mmap
 from coldshot cimport *
+log = logging.getLogger( __name__ )
 
 __all__ = ("Loader",)
 
@@ -148,14 +148,29 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
             seconds,
             seconds/self.calls
         )
+    def __repr__( self ):
+        return '<%s %s %s:%ss>'%(
+            self.__class__.__name__,
+            self.name,
+            self.calls,
+            self.time/float(1000000),
+        )
 
 cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
-    """Loader that can load a Coldshot profile"""
+    """Loader for Coldshot profiles
+    
+    Attributes of note:
+    
+        files -- map ID: FileInfo objects 
+        file_names -- map filename: ID 
+        functions -- map ID: FunctionInfo objects 
+        function_names -- map function-name: ID
+    """
     cdef public object directory
     
     cdef public object index_filename
-    cdef public object calls_filename
-    cdef public object lines_filename
+    cdef public list call_files 
+    cdef public list line_files 
     
     cdef public dict files
     cdef public dict file_names
@@ -165,37 +180,50 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
     def __cinit__( self, directory ):
         self.directory = directory
         self.index_filename = os.path.join( directory, profiler.Profiler.INDEX_FILENAME )
-        self.calls_filename = os.path.join( directory, profiler.Profiler.CALLS_FILENAME )
-        self.lines_filename = os.path.join( directory, profiler.Profiler.LINES_FILENAME )
-        
-        
-        
+        self.call_files = []
+        self.line_files = []
         self.files = {}
         self.file_names = {}
         self.functions = {}
         self.function_names = {}
 
+    def load( self ):
+        """Scan our data-files for basic index information"""
         self.process_index( self.index_filename )
-        self.process_calls( self.calls_filename )
-        self.process_lines( self.lines_filename )
-    def load_name( self, name ):
+        for call_file in self.call_files:
+            self.process_calls( call_file )
+        for line_file in self.line_files:
+            self.process_lines( line_file )
+    def unquote( self, name ):
+        """Remove quoting to get the original name"""
         return urllib.unquote( name )
     def process_index( self, index_filename ):
+        """Process the plain-text index file to load our declarations"""
         for line in open(index_filename):
             line = line.strip( '\n' )
             line = line.split()
             if line[0] == 'F':
+                # code-file declaration
                 fileno,filename = line[1:3]
                 fileno = int(fileno)
-                filename = self.load_name( filename )
+                filename = self.unquote( filename )
                 self.files[fileno] = FileInfo( filename, fileno )
                 self.file_names[filename] = fileno
             elif line[0] == 'f':
+                # function/built-in declaration
                 funcno,fileno,lineno,name = line[1:5]
                 funcno,fileno,lineno = int(funcno),int(fileno),int(lineno)
-                name = self.load_name( name )
+                name = self.unquote( name )
                 self.functions[ funcno ] = FunctionInfo( funcno,name,fileno,lineno )
                 self.function_names[ name ] = funcno
+            elif line[0] == 'D':
+                # data-file declaration...
+                if line[1] == 'calls':
+                    self.call_files.append( line[2] )
+                elif line[1] == 'lines':
+                    self.line_files.append( line[2] )
+                else:
+                    log.error( "Unrecognized data-file type: %s %s", line[1], line[2] )
     def process_calls( self, calls_filename ):
         """Process a CallsFile to extract basic cProfile-like information
         
@@ -275,7 +303,3 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         for name,id in sorted(self.file_names.items()):
             print unicode( self.files[id] )
 
-def main():
-    loader = Loader( sys.argv[1] )
-    loader.print_report()
-    

@@ -1,5 +1,5 @@
 """Top level (mainloop-like) operation"""
-from . import profiler
+from . import profiler, loader
 import tempfile, atexit
 
 __all__ = ('run','runctx')
@@ -53,7 +53,7 @@ def runctx( code, globals=None, locals=None, prof_dir=None ):
         prof.stop()
     return prof
 
-def main():
+def profile():
     import os, sys
     from optparse import OptionParser
     usage = "coldshot output_directory scriptfile [arg] ...\n"
@@ -72,4 +72,11 @@ def main():
         '__package__': None,
     }
     runctx(code, globals, None, output)
+    return 0
+
+def report():
+    """Load the data-set and print the basic report"""
+    reporter = loader.Loader( sys.argv[1] )
+    reporter.load()
+    reporter.print_report()
     return 0
