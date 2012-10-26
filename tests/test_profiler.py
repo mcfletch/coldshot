@@ -1,9 +1,21 @@
 from unittest import TestCase
 from coldshot import profiler, loader 
-import numpy, tempfile, os, shutil
+import numpy, tempfile, os, shutil, time
 
 def blah():
     return True
+
+def sleep( t ):
+    time.sleep( t )
+    
+def slow_lines():
+    time.sleep( .001 )
+    time.sleep( .01 )
+    time.sleep( .1 )
+def slow_calls():
+    sleep( .001 )
+    sleep( .01 )
+    sleep( .1 )
 
 class TestProfiler( TestCase ):
     def setUp( self ):
@@ -53,4 +65,23 @@ class TestProfiler( TestCase ):
         list_append = load.function_names[('__builtin__.list','append')]
         assert list_append.calls == 400, list_append.calls
     
-    
+    def test_line_timings_vs_calls( self ):
+        self.profiler.start()
+        slow_lines()
+        self.profiler.stop()
+        
+        load = loader.Loader( self.test_dir )
+        load.load()
+        slow_func = load.function_names['tests.test_profiler','slow_lines']
+        assert len(slow_func.line_map) == 3, slow_func.line_map
+        sorted_lines = [x[1] for x in sorted( slow_func.line_map.items())]
+        multiplier = 1000000
+        for line,(low,high) in zip(sorted_lines,[
+            (.001,.002),
+            (.01,.011),
+            (.1,.101),
+        ]):
+            assert line.time > low * multiplier, line 
+            assert line.time < high * multiplier, line 
+        line_total = sum([ x.time for x in sorted_lines ])
+        assert slow_func.time-line_total < .001*multiplier, (line_total, slow_func.time)
