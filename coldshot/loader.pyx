@@ -6,6 +6,8 @@ log = logging.getLogger( __name__ )
 
 __all__ = ("Loader",)
 
+SECONDS_FACTOR = 1000000.00
+
 cdef class MappedFile:
     cdef object filename 
     cdef long filesize
@@ -29,6 +31,8 @@ cdef class CallsFile(MappedFile):
         c_level = <mmap_object *>mm
         self.records = <call_info *>(c_level[0].data)
         self.record_count = self.filesize // sizeof( call_info )
+    def __iter__( self ):
+        return CallsIterator( self )
 cdef class LinesFile(MappedFile):
     cdef line_info * records
     def get_pointer( self, mm ):
@@ -36,6 +40,33 @@ cdef class LinesFile(MappedFile):
         c_level = <mmap_object *>mm
         self.records = <line_info *>(c_level[0].data)
         self.record_count = self.filesize // sizeof( line_info )
+    def __iter__( self ):
+        return LinesIterator( self )
+        
+cdef class CallsIterator:
+    cdef CallsFile records
+    cdef long position
+    def __cinit__( self, records ):
+        self.records = records 
+        self.position = 0
+    def __next__( self ):
+        if self.position < self.records.record_count:
+            result = <object>(self.records.records[self.position])
+            self.position += 1
+            return result 
+        raise StopIteration( self.position )
+cdef class LinesIterator:
+    cdef LinesFile lines 
+    cdef long position
+    def __cinit__( self, lines ):
+        self.lines = lines 
+        self.position = 0
+    def __next__( self ):
+        if self.position < self.lines.record_count:
+            result = <object>(self.lines.records[self.position])
+            self.position += 1
+            return result 
+        raise StopIteration( self.position )
     
 def test_mmap( filename ):
     """Test mmaping a file into call_info structures"""
@@ -77,16 +108,18 @@ cdef class ChildCall:
         self.time = time 
 
 cdef public class FunctionLineInfo [object Coldshot_FunctionLineInfo, type Coldshot_FunctionLineInfo_Type]:
-    cdef public uint16_t lineno 
+    cdef public uint16_t line 
     cdef public uint32_t time 
-    cdef public uint32_t count
-    def __cinit__( self, uint16_t lineno ):
-        self.lineno = lineno 
+    cdef public uint32_t calls
+    def __cinit__( self, uint16_t line ):
+        self.line = line 
         self.time = 0
-        self.count = 0
+        self.calls = 0
     cdef add_time( self, uint32_t delta ):
         self.time += delta 
-        self.count += 1
+        self.calls += 1
+    def __repr__( self ):
+        return b'Line %s: %s %.4fs'%( self.line, self.calls, self.time/SECONDS_FACTOR, )
     
 cdef public class FileInfo [object Coldshot_FileInfo, type Coldshot_FileInfo_Type]:
     cdef object filename 
@@ -111,7 +144,7 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
         
         calls -- count of calls on the function 
         time -- cumulative time spent in the function
-        line_map -- lineno: FunctionLineInfo mapping for each line executed
+        line_map -- line: FunctionLineInfo mapping for each line executed
     """
     cdef public short int id
     cdef public str module 
@@ -159,7 +192,7 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
             self.line_map[line] = line_object = FunctionLineInfo( line )
         return line_object
     def __unicode__( self ):
-        seconds = self.time / float( 1000000 )
+        seconds = self.time / SECONDS_FACTOR
         return u'%s % 5i % 5.4fs % 5.4fs'%(
             self.name.ljust(30),
             self.calls,
@@ -172,7 +205,7 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
             self.module,
             self.name,
             self.calls,
-            self.time/float(1000000),
+            self.time/SECONDS_FACTOR,
         )
 
 cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
