@@ -21,7 +21,7 @@ class Reporter( object ):
         report = [ header, '' ]
         divisor = float(1000000)
         for function in functions:
-            if function.time > 1000:
+            if function.time:
                 report.append('''%s %s % 8.4f % 8d'''%(
                     function.module[-30:].rjust(30),
                     function.name.ljust(20),

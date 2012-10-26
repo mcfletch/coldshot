@@ -53,3 +53,4 @@ class TestProfiler( TestCase ):
         list_append = load.function_names[('__builtin__.list','append')]
         assert list_append.calls == 400, list_append.calls
     
+    

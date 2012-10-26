@@ -313,7 +313,7 @@ cdef class Profiler:
         cdef uint32_t count
         cdef bytes name
         cdef bytes module 
-        id = <long>func # ssize_t?
+        id = <long>(func.m_ml) # ssize_t?
         if id not in self.functions:
             name = builtin_name( func[0] )
             module = module_name( func[0] )
