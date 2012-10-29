@@ -12,27 +12,16 @@ class TestWriter( TestCase ):
     def test_calls_writer( self ):
         """Test that calls writer can write records as expected"""
         datafile = os.path.join( self.test_dir, 'test_calls_writer' )
-        cw = profiler.CallsWriter( datafile )
-        cw.write( 8, 14, 23, 85 )
+        cw = profiler.DataWriter( datafile )
+        cw.write( 8, 12, 14, 23, 2<<24 )
         cw.close()
         content = open( datafile,'rb' ).read()
         assert chr(8) in content, content 
+        assert chr(12) in content, content 
         assert chr( 14 ) in content, content 
         assert chr( 23 ) in content, content 
-        assert chr( 85 ) in content, content 
+        assert chr( 2 ) in content, content 
         assert len(content) == profiler.CALL_INFO_SIZE, content 
-    def test_lines_writer( self ):
-        datafile = os.path.join( self.test_dir, 'test_lines_writer' )
-        lw = profiler.LinesWriter( datafile )
-        lw.write( 8, 2, 14, 23, 85 )
-        lw.close()
-        content = open( datafile,'rb' ).read()
-        assert chr(8) in content, content 
-        assert chr(2) in content, content
-        assert chr( 14 ) in content, content 
-        assert chr( 23 ) in content, content 
-        assert chr( 85 ) in content, content 
-        assert len(content) == profiler.LINE_INFO_SIZE, content 
 
     def test_index_writer( self ):
         datafile = os.path.join( self.test_dir, 'test_index_writer' )

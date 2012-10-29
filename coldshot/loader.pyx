@@ -57,9 +57,13 @@ def test_mmap( filename ):
 cdef class FunctionCallInfo:
     cdef FunctionInfo function 
     cdef uint32_t start 
+    cdef uint16_t last_line 
+    cdef uint32_t last_line_time
     def __cinit__( self, FunctionInfo function, uint32_t start ):
         self.function = function 
         self.start = start 
+        self.last_line = function.line
+        self.last_line_time = start 
     cdef public uint32_t record_stop( self, uint32_t stop ):
         cdef uint32_t delta = stop - self.start 
         self.function.record_call()
@@ -67,6 +71,17 @@ cdef class FunctionCallInfo:
         return delta
     cdef public uint32_t record_stop_child( self, uint32_t stop, uint32_t child ):
         """Child has exited, record time spent in the child"""
+    cdef record_line( self, uint16_t new_line, uint32_t stop, int exit ):
+        """Record time spent on a given line"""
+        cdef FunctionLineInfo current = self.function.line_map.get( self.last_line, None )
+        cdef uint32_t delta = stop-self.last_line_time
+        if current is None:
+            self.function.line_map[self.last_line] = current = FunctionLineInfo( self.last_line )
+        current.add_time( delta, exit )
+        
+        self.last_line = new_line 
+        self.last_line_time = stop 
+        return 
         
 cdef class ThreadTimeInfo:
     cdef uint16_t thread 
@@ -97,9 +112,10 @@ cdef public class FunctionLineInfo [object Coldshot_FunctionLineInfo, type Colds
         self.line = line 
         self.time = 0
         self.calls = 0
-    cdef add_time( self, uint32_t delta ):
+    cdef add_time( self, uint32_t delta, int exit ):
         self.time += delta 
-        self.calls += 1
+        if not exit:
+            self.calls += 1
     def __repr__( self ):
         return b'Line %s: %s %.4fs'%( self.line, self.calls, self.time/SECONDS_FACTOR, )
     
@@ -335,7 +351,9 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                 # TODO: add a new line to the stack for the start of the function...
                 last_ts = timestamp
             elif flags == 2: # return 
-                child_delta = (<FunctionCallInfo>(stack.function_stack[-1])).record_stop( timestamp )
+                call_info = <FunctionCallInfo>(stack.function_stack[-1])
+                call_info.record_line( call_info.function.line, timestamp, 0 )
+                child_delta = call_info.record_stop( timestamp )
                 del stack.function_stack[-1]
                 if stack.function_stack:
                     call_info = stack.function_stack[-1]
@@ -345,12 +363,15 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                     function_info = call_info.function 
                     current_function = call_info.function.id
                 last_ts = timestamp
-#            elif flags == 0: # line...
-#                # we know current function exists, but there's no guarantee that the function 
-#                # was called within the profile operation (it is know that there will be times 
-#                # it was not, in fact), so we need to pull a line-specific stack for this...
-#                
-#                line_info_c = (<FunctionLineInfo>(thread_info.last_record))
-#                delta = thread_info.line_ts( timestamp )
-#                line_info_c.add_time( delta )
+            elif flags == 0: # line...
+                # we know current function exists, but there's no guarantee that the function 
+                # was called within the profile operation (it is know that there will be times 
+                # it was not, in fact), so we need to pull a line-specific stack for this...
+                if not stack.function_stack:
+                    call_info = FunctionCallInfo( function_info, timestamp )
+                    stack.function_stack.append( call_info )
+                else:
+                    call_info = stack.function_stack[-1]
+                call_info.record_line( line, timestamp, 0 )
+            
         calls_data.close()

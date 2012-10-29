@@ -78,8 +78,8 @@ class TestProfiler( TestCase ):
         load.load()
         for name in ['slow_lines','slow_calls']:
             slow_func = load.function_names['tests.test_profiler',name]
-            assert len(slow_func.line_map) == 3, slow_func.line_map
-            sorted_lines = [x[1] for x in sorted( slow_func.line_map.items())]
+            assert len(slow_func.line_map) == 4, slow_func.line_map # start + 3 internal lines
+            sorted_lines = [x[1] for x in sorted( slow_func.line_map.items())][1:]
             multiplier = 1000000
             for line,(low,high) in zip(sorted_lines,[
                 (.001,.002),

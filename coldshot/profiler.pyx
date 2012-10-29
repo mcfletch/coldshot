@@ -115,6 +115,9 @@ cdef class DataWriter:
         if written != 1:
             raise IOError( """Unable to write to file: %s"""%( self.filename, ))
         return written
+    def write( self, thread, function, timestamp, line, flags ):
+        """Write a record to the file (for testing)"""
+        return self.write_callinfo( thread, function, timestamp, line, flags )
     cdef ssize_t write_callinfo( 
         self, 
         uint16_t thread, 
