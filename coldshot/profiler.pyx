@@ -101,6 +101,7 @@ cdef class DataWriter:
     def __dealloc__( self ):
         self._close()
         self.filename = None
+    
     cdef FILE * open_file( self, bytes filename ):
         cdef FILE * fd 
         fd = fopen( filename, 'w' )
@@ -240,9 +241,8 @@ cdef class Profiler:
         lines -- if True, write line traces (default is True)
         version -- file-format version to write
         """
-        if isinstance( dirname, unicode ):
-            dirname = dirname.encode( 'utf-8' )
-        self.index = IndexWriter( os.path.join( dirname, self.INDEX_FILENAME ) )
+        index_filename = os.path.join( dirname, self.INDEX_FILENAME )
+        self.index = IndexWriter( index_filename )
         calls_filename = os.path.join( dirname, self.CALLS_FILENAME )
         self.calls = DataWriter( calls_filename )
         

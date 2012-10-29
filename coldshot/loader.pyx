@@ -241,8 +241,6 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         self.process_index( self.index_filename )
         for call_file in self.call_files:
             self.process_calls( call_file )
-        for line_file in self.line_files:
-            self.process_lines( line_file )
     def unquote( self, name ):
         """Remove quoting to get the original name"""
         return urllib.unquote( name )
@@ -293,6 +291,7 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         cdef uint32_t current_function # the function currently being processed...
         cdef ThreadStack stack # current stack (thread)
         cdef FunctionInfo function_info # current function 
+        cdef FunctionCallInfo call_info # temp for function being called...
         cdef uint32_t last_ts # for this thread...
         
         # incoming record information
@@ -322,7 +321,7 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                 # we should *likely* track that somewhere...
                 stack = stacks.get( thread )
                 if stack is None:
-                    stacks[thread] = ThreadStack( thread )
+                    stacks[thread] = stack = ThreadStack( thread )
                 current_thread = thread
                 last_ts = stack.last_ts
             
@@ -337,13 +336,14 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                 last_ts = timestamp
             elif flags == 2: # return 
                 child_delta = (<FunctionCallInfo>(stack.function_stack[-1])).record_stop( timestamp )
-                del stack[-1]
+                del stack.function_stack[-1]
                 if stack.function_stack:
-                    function_info = stack.function_stack[-1]
+                    call_info = stack.function_stack[-1]
                     # child is current_function...
-                    function_info.record_stop_child( child_delta, current_function )
+                    call_info.record_stop_child( child_delta, current_function )
                     # update for the next loop...
-                    current_function = function_info.id
+                    function_info = call_info.function 
+                    current_function = call_info.function.id
                 last_ts = timestamp
 #            elif flags == 0: # line...
 #                # we know current function exists, but there's no guarantee that the function 
