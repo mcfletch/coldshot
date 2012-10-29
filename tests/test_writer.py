@@ -24,10 +24,11 @@ class TestWriter( TestCase ):
     def test_lines_writer( self ):
         datafile = os.path.join( self.test_dir, 'test_lines_writer' )
         lw = profiler.LinesWriter( datafile )
-        lw.write( 8, 14, 23, 85 )
+        lw.write( 8, 2, 14, 23, 85 )
         lw.close()
         content = open( datafile,'rb' ).read()
         assert chr(8) in content, content 
+        assert chr(2) in content, content
         assert chr( 14 ) in content, content 
         assert chr( 23 ) in content, content 
         assert chr( 85 ) in content, content 
@@ -43,5 +44,3 @@ class TestWriter( TestCase ):
         assert split[0] == 'P'
         assert split[2] == 'v3'
         assert split[3] == 'byteswap=False', """Coldshot has not yet been tested on big-endian platforms"""
-        
-        
