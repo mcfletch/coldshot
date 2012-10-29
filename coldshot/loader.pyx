@@ -194,7 +194,6 @@ cdef class ThreadStack:
     cdef uint16_t thread 
     cdef list function_stack # list of FunctionCallInfo instances 
     def __cinit__( self, uint16_t thread ):
-        cdef uint32_t initial_ts = 0
         self.thread = thread
         self.function_stack = []
 
@@ -267,8 +266,6 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                 # data-file declaration...
                 if line[1] == 'calls':
                     self.call_files.append( line[2] )
-                elif line[1] == 'lines':
-                    self.line_files.append( line[2] )
                 else:
                     log.error( "Unrecognized data-file type: %s %s", line[1], line[2] )
     def process_calls( self, calls_filename ):
@@ -287,6 +284,10 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         cdef FunctionInfo function_info # current function 
         cdef FunctionCallInfo call_info # temp for function being called...
         
+        cdef uint32_t flag_mask = 0xff000000
+        cdef uint32_t function_mask = 0x00ffffff
+        cdef uint32_t flag_shift = 24
+        
         # incoming record information
         cdef uint16_t thread 
         cdef uint32_t function
@@ -304,9 +305,10 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         stacks = {}
         for i in range( calls_data.record_count ):
             thread = calls_data.records[i].thread
-            function = calls_data.records[i].function & 0x00ffffff
+            function = calls_data.records[i].function & function_mask
             timestamp = calls_data.records[i].timestamp
-            flags = (calls_data.records[i].function & 0xff000000) >> 24
+            flags = (calls_data.records[i].function & flag_mask)
+            flags = flags >> flag_shift
             line = calls_data.records[i].line
             
             if thread != current_thread:
@@ -323,8 +325,11 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                 current_function = function
             
             if flags == 1: # call...
-                stack.function_stack.append( FunctionCallInfo( function_info, timestamp ) )
+                call_info = FunctionCallInfo( function_info, timestamp )
+                stack.function_stack.append( call_info )
             elif flags == 2: # return 
+                # TODO: suppress start-of-func lines, as they are not really 
+                # telling us anything about the individual lines...
                 call_info = <FunctionCallInfo>(stack.function_stack[-1])
                 call_info.record_line( call_info.function.line, timestamp, 0 )
                 child_delta = call_info.record_stop( timestamp )
