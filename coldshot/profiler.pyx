@@ -412,6 +412,13 @@ cdef class Profiler:
         #delta = delta & 0xffffffff
         return <uint32_t>delta
     
+#    def __enter__( self ):
+#        """Start the profiler on entry"""
+#        self.start()
+#    def __exit__( self, type, value, traceback ):
+#        """Stop the profiler on exit"""
+#        self.stop()
+    
     # External api
     def start( self ):
         """Install this profiler as the trace function for the interpreter"""

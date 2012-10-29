@@ -1,4 +1,4 @@
-"""Top level (mainloop-like) operation"""
+"""Top level (mainloop-like) operations"""
 from . import profiler, loader, reporter
 import tempfile, atexit, sys
 
@@ -54,6 +54,13 @@ def runctx( code, globals=None, locals=None, prof_dir=None ):
     return prof
 
 def profile():
+    """Primary external entry point for profiling 
+    
+    $ coldshot <outdirectory> scriptfile [arg ... ]
+    
+    Note: this command line is currently too simplistic, as it can wind up 
+    mis-interpreting the arguments if you happen to forget the outdirectory.
+    """
     import os, sys
     from optparse import OptionParser
     usage = "coldshot output_directory scriptfile [arg] ...\n"
@@ -75,7 +82,7 @@ def profile():
     return 0
 
 def report():
-    """Load the data-set and print the basic report"""
+    """Load the data-set and print a basic report"""
     load = loader.Loader( sys.argv[1] )
     load.load()
     report = reporter.Reporter( load )
@@ -83,6 +90,7 @@ def report():
     return 0
 
 def raw_calls():
+    """Load the data-set and print each record as a python dictionary"""
     scanner = loader.CallsFile( sys.argv[1] )
     for line in scanner:
         print line

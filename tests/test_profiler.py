@@ -91,3 +91,11 @@ class TestProfiler( TestCase ):
             line_total = sum([ x.time for x in sorted_lines ])
             assert slow_func.time-line_total < .001*multiplier, (line_total, slow_func.time)
             
+#    def test_enter_exit( self ):
+#        with self.profiler:
+#            for i in range(3):
+#                pass 
+#        load = loader.Loader( self.test_dir )
+#        this_key = ('tests.test_profiler','test_enter_exit')
+#        assert this_key in load.function_names, load.function_names
+#    
