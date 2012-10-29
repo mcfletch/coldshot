@@ -233,7 +233,7 @@ cdef class Profiler:
     CALLS_FILENAME = b'calls.data'
     LINES_FILENAME = b'lines.data'
     
-    def __cinit__( self, dirname, lines=True, version=1 ):
+    def __init__( self, dirname, lines=True, version=1 ):
         """Initialize the profiler (and open all files)
         
         dirname -- directory in which to record profiles 
@@ -243,9 +243,10 @@ cdef class Profiler:
         if isinstance( dirname, unicode ):
             dirname = dirname.encode( 'utf-8' )
         self.index = IndexWriter( os.path.join( dirname, self.INDEX_FILENAME ) )
-        self.index.prefix(version=version)
         calls_filename = os.path.join( dirname, self.CALLS_FILENAME )
         self.calls = DataWriter( calls_filename )
+        
+        self.index.prefix(version=version)
         self.index.write_datafile( calls_filename, 'calls' )
         
         self.lines = lines
@@ -258,11 +259,6 @@ cdef class Profiler:
         self.LINE_FLAGS = 0 << 24 # just for consistency
         self.CALL_FLAGS = 1 << 24
         self.RETURN_FLAGS = 2 << 24
-    def __dealloc__( self ):
-        self.index.close()
-        self.calls.close()
-        self.index = None 
-        self.calls = None 
         
     cdef uint32_t file_to_number( self, PyCodeObject code ):
         """Convert a code reference to a file number"""
