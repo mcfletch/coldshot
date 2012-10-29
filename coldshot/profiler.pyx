@@ -278,13 +278,16 @@ cdef class Profiler:
     cdef uint32_t file_to_number( self, PyCodeObject code ):
         """Convert a code reference to a file number"""
         cdef uint32_t count
-        filename = <object>(code.co_filename)
-        if filename not in self.files:
+        cdef object count_obj
+        cdef bytes filename = <bytes>(code.co_filename)
+        count_obj = self.files.get( filename )
+        if count_obj is None:
             count = len( self.files ) + 1
-            self.files[filename] = (count, filename)
+            self.files[filename] = count
             self.index.write_file( count, filename )
-            return count
-        return <uint32_t>(self.files[filename][0])
+        else:
+            count = <long>count_obj
+        return count
     cdef uint32_t func_to_number( self, PyFrameObject frame ):
         """Convert a function reference to a persistent function ID"""
         cdef PyCodeObject code = frame.f_code[0]
@@ -292,20 +295,23 @@ cdef class Profiler:
         cdef bytes name
         cdef bytes module 
         cdef uint32_t count
+        cdef object count_obj
         cdef int fileno
         key = (<object>code.co_filename,<int>code.co_firstlineno)
-        if key not in self.functions:
+        count_obj = self.functions.get( key )
+        if count_obj is None:
             fileno = self.file_to_number( code )
             try:
                 module = (<object>frame.f_globals)['__name__']
             except KeyError as err:
                 module = <bytes>code.co_filename
             name = <bytes>(code.co_name)
-            count = len(self.functions)+1
-            self.functions[key] = (count, name)
+            count = <uint32_t>(len(self.functions)+1)
+            self.functions[key] = count
             self.index.write_func( count, fileno, code.co_firstlineno, module, name)
-            return count
-        return <uint32_t>(self.functions[key][0])
+        else:
+            count = <long>count_obj
+        return <uint32_t>count
     cdef uint32_t builtin_to_number( self, PyCFunctionObject * func ):
         """Convert a builtin-function reference to a persistent function ID
         
@@ -314,17 +320,33 @@ cdef class Profiler:
         """
         cdef ssize_t id 
         cdef uint32_t count
+        cdef object count_obj
         cdef bytes name
         cdef bytes module 
         id = <ssize_t>(func.m_ml) # ssize_t?
-        if id not in self.functions:
+        count_obj = self.functions.get( id )
+        if count_obj is None:
             name = builtin_name( func[0] )
             module = module_name( func[0] )
             count = len(self.functions) + 1
-            self.functions[id] = (count, module, name)
+            self.functions[id] = count
             self.index.write_func( count, 0, 0, module, name )
-            return count
-        return <uint32_t>(self.functions[id][0])
+        else:
+            count = <long>count_obj
+        return count
+    cdef uint16_t thread_id( self, PyFrameObject frame ):
+        """Extract thread_id and convert to a 16-bit integer..."""
+        cdef long id 
+        cdef uint16_t count
+        cdef object count_obj
+        id = <long>frame.f_tstate.thread_id
+        count_obj = self.threads.get( id )
+        if count_obj is None:
+            count = len(self.threads) + 1
+            self.threads[id] = count 
+        else:
+            count = <long>count_obj
+        return count
     
     # Pass a formatted call onto the writer...
     cdef write_call( self, PyFrameObject frame ):
@@ -374,27 +396,6 @@ cdef class Profiler:
         )
     
     # State introspection mechanisms
-    cdef uint16_t thread_id( self, PyFrameObject frame ):
-        """Extract thread_id and convert to a 16-bit integer..."""
-        cdef long id 
-        cdef int count
-        id = <long>frame.f_tstate.thread_id
-        if id not in self.threads:
-            count = len(self.threads) + 1
-            self.threads[id] = count 
-            return <int>count
-        return self.threads[id]
-    cdef int16_t stack_depth( self, PyFrameObject frame ):
-        """Count stack-depth for the given frame
-        
-        Note: limited to unsigned short int depth
-        """
-        cdef int16_t depth
-        depth = 1
-        while frame.f_back != NULL:
-            depth += 1
-            frame = frame.f_back[0]
-        return depth
     cdef public uint32_t timestamp( self ):
         """Calculate the delta since the last call to hpTimer(), store new value
         
@@ -476,7 +477,6 @@ cdef int profile_callback(
     object arg
 ):
     """Callback for profile (call/return, include C call/return) operations"""
-    cdef int stack_depth
     cdef Profiler profiler = <Profiler>self
     if what == PyTrace_CALL:
         profiler.write_call( frame[0] )
