@@ -18,5 +18,5 @@ cdef extern from "minimalmmap.h":
 cdef struct call_info:
     uint16_t thread
     uint16_t line
-    uint32_t function # first byte is flags...
+    uint32_t function # high byte is flags...
     uint32_t timestamp

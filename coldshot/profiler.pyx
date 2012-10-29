@@ -65,7 +65,6 @@ cdef extern from 'lowlevel.h':
     void coldshot_unset_profile()
 
 CALL_INFO_SIZE = sizeof( call_info )
-print 'CALL_INFO_SIZE', CALL_INFO_SIZE
     
 __all__ = [
     'timer',
@@ -76,7 +75,7 @@ def timer():
     return <long>hpTimer()
 
 cdef class DataWriter:
-    cdef int opened
+    cdef bint opened
     cdef bytes filename
     cdef FILE * fd 
     def __cinit__( self, filename not None ):
@@ -84,7 +83,7 @@ cdef class DataWriter:
             filename = filename.encode( 'utf-8' )
         self.filename = filename 
         self.fd = self.open_file( self.filename )
-        self.opened = 1
+        self.opened = True
     def flush( self ):
         """Flush our file descriptor's buffers"""
         if self.opened:
@@ -95,7 +94,7 @@ cdef class DataWriter:
     cdef _close( self ):
         """C-level closing operation"""
         if self.opened:
-            self.opened = 0
+            self.opened = False
             fflush( self.fd )
             fclose( self.fd )
     def __dealloc__( self ):
@@ -104,11 +103,12 @@ cdef class DataWriter:
     
     cdef FILE * open_file( self, bytes filename ):
         cdef FILE * fd 
-        fd = fopen( filename, 'w' )
+        fd = fopen( <char *>filename, 'w' )
         if fd == NULL:
             raise IOError( "Unable to open output file: %s", filename )
         return fd
     cdef ssize_t write_void( self, void * data, ssize_t size ):
+        cdef ssize_t written
         if not self.opened:
             raise IOError( """Attempt to write to un-opened (or closed) file %s"""%( self.filename, ))
         written = fwrite( data, size, 1, self.fd )
@@ -126,10 +126,22 @@ cdef class DataWriter:
         uint16_t line, 
         uint32_t flags,
     ):
+        """Write our call_info record
+        
+            uint16_t thread 
+            uint16_t line
+            uint32_t function # high byte is flags...
+            uint32_t timestamp # 1/10**6 seconds
+        
+        returns number of records written (should always be 1)
+        """
         cdef call_info local 
         cdef ssize_t written
+        cdef uint32_t flag_mask = 0xff000000
         local.thread = thread 
-        local.function = (function & 0x00ffffff) | (flags & 0xff000000)
+        
+        flags = flags & flag_mask
+        local.function = function | flags
         local.line = line 
         local.timestamp = timestamp
         written = self.write_void( &local, sizeof( call_info ))
@@ -170,7 +182,7 @@ cdef class IndexWriter(object):
         strings are written in urllib.quote()'d form
     """
     cdef object fh
-    cdef int should_close # note: means "we should close it", not "has been opened"
+    cdef bint should_close # note: means "we should close it", not "has been opened"
     def __init__( self, file ):
         """Open the IndexWriter
         
@@ -179,10 +191,10 @@ cdef class IndexWriter(object):
         """
         if isinstance( file, (bytes,unicode)):
             self.fh = open( file, 'wb' )
-            self.should_close = 1
+            self.should_close = True
         else:
             self.fh = file 
-            self.should_close = 0
+            self.should_close = False
     def prefix( self, version=1 ):
         """Write our version prefix to the data-file"""
         message = b'P COLDSHOTBinary v%d byteswap=%s\n'%( version, sys.byteorder=='big' )
@@ -204,6 +216,7 @@ cdef class IndexWriter(object):
         self.fh.flush()
     def close( self ):
         if self.should_close:
+            self.should_close = False
             self.fh.close()
     
 cdef class Profiler:
@@ -235,7 +248,6 @@ cdef class Profiler:
     
     INDEX_FILENAME = b'index.profile'
     CALLS_FILENAME = b'calls.data'
-    LINES_FILENAME = b'lines.data'
     
     def __init__( self, dirname, lines=True, version=1 ):
         """Initialize the profiler (and open all files)
@@ -300,11 +312,11 @@ cdef class Profiler:
         Note: assumes that builtin function IDs (pointers) are persistent 
         and unique.
         """
-        cdef long id 
+        cdef ssize_t id 
         cdef uint32_t count
         cdef bytes name
         cdef bytes module 
-        id = <long>(func.m_ml) # ssize_t?
+        id = <ssize_t>(func.m_ml) # ssize_t?
         if id not in self.functions:
             name = builtin_name( func[0] )
             module = module_name( func[0] )
@@ -329,7 +341,6 @@ cdef class Profiler:
         )
         
     cdef write_c_call( self, PyFrameObject frame, PyCFunctionObject * func ):
-        cdef long id 
         cdef uint32_t ts = self.timestamp()
         cdef uint32_t func_number = self.builtin_to_number( func )
         self.calls.write_callinfo( 
@@ -393,8 +404,10 @@ cdef class Profiler:
         not).
         """
         cdef PY_LONG_LONG delta
-        current = hpTimer()
-        return <uint32_t>( current - self.internal_start - self.internal_discount)
+        cdef PY_LONG_LONG current = hpTimer()
+        delta = current - self.internal_start - self.internal_discount
+        #delta = delta & 0xffffffff
+        return <uint32_t>delta
     
     # External api
     def start( self ):
