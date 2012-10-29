@@ -64,8 +64,8 @@ cdef extern from 'lowlevel.h':
     void coldshot_unset_trace()
     void coldshot_unset_profile()
 
-LINE_INFO_SIZE = sizeof( line_info )
 CALL_INFO_SIZE = sizeof( call_info )
+print 'CALL_INFO_SIZE', CALL_INFO_SIZE
     
 __all__ = [
     'timer',
@@ -79,7 +79,7 @@ cdef class DataWriter:
     cdef int opened
     cdef bytes filename
     cdef FILE * fd 
-    def __cinit__( self, filename ):
+    def __cinit__( self, filename not None ):
         if isinstance( filename, unicode ):
             filename = filename.encode( 'utf-8' )
         self.filename = filename 
@@ -100,53 +100,36 @@ cdef class DataWriter:
             fclose( self.fd )
     def __dealloc__( self ):
         self._close()
+        self.filename = None
     cdef FILE * open_file( self, bytes filename ):
         cdef FILE * fd 
         fd = fopen( filename, 'w' )
         if fd == NULL:
             raise IOError( "Unable to open output file: %s", filename )
         return fd
-
-cdef class CallsWriter( DataWriter ):
-    """DataWriter which writes call_info records to disk
-    
-    Note: call records are currently written in natural struct order,
-    including packing/alignment natural for the platform.  That may change 
-    going forward.
-    """
-    def write( self, thread, stack_depth, function, timestamp ):
-        return self.write_callinfo( thread, stack_depth, function, timestamp )
-    cdef write_callinfo( self, uint16_t thread, int16_t stack_depth, uint32_t function, uint32_t timestamp ):
+    cdef ssize_t write_void( self, void * data, ssize_t size ):
         if not self.opened:
-            raise RuntimeError( """Attempt to write to closed file %s"""%( self.filename, ))
+            raise IOError( """Attempt to write to un-opened (or closed) file %s"""%( self.filename, ))
+        written = fwrite( data, size, 1, self.fd )
+        if written != 1:
+            raise IOError( """Unable to write to file: %s"""%( self.filename, ))
+        return written
+    cdef ssize_t write_callinfo( 
+        self, 
+        uint16_t thread, 
+        uint32_t function, 
+        uint32_t timestamp, 
+        uint16_t line, 
+        uint32_t flags,
+    ):
         cdef call_info local 
+        cdef ssize_t written
         local.thread = thread 
-        local.stack_depth = stack_depth
-        local.function = function 
+        local.function = (function & 0x00ffffff) | (flags & 0xff000000)
+        local.line = line 
         local.timestamp = timestamp
-        written = fwrite( &local, sizeof(call_info), 1, self.fd )
-        if written != 1:
-            raise RuntimeError( """Unable to write to file: %s"""%( self.filename, ))
-cdef class LinesWriter( DataWriter ):
-    """DataWriter which writes line_info records to disk
-    
-    Note: call records are currently written in natural struct order,
-    including packing/alignment natural for the platform.  That may change 
-    going forward.
-    """
-    def write( self, thread, funcno, lineno, timestamp ):
-        return self.write_lineinfo( thread, funcno, lineno, timestamp )
-    cdef write_lineinfo( self, uint16_t thread, uint16_t funcno, uint16_t lineno, uint32_t timestamp ):
-        if not self.opened:
-            raise RuntimeError( """Attempt to write to closed file %s"""%( self.filename, ))
-        cdef line_info local 
-        local.thread = thread 
-        local.funcno = funcno
-        local.lineno = lineno 
-        local.timestamp = timestamp
-        written = fwrite( &local, sizeof(line_info), 1, self.fd )
-        if written != 1:
-            raise RuntimeError( """Unable to write to file: %s"""%( self.filename, ))
+        written = self.write_void( &local, sizeof( call_info ))
+        return written
 
 cdef class IndexWriter(object):
     """Writes the (plain-text) index to a standard Python file
@@ -234,19 +217,23 @@ cdef class Profiler:
     cdef public dict threads
     
     cdef public IndexWriter index
-    cdef public CallsWriter calls 
-    cdef public LinesWriter lines 
+    cdef public DataWriter calls
     
     cdef public PY_LONG_LONG internal_start
     cdef public PY_LONG_LONG internal_discount
     
+    cdef uint32_t RETURN_FLAGS 
+    cdef uint32_t CALL_FLAGS 
+    cdef uint32_t LINE_FLAGS
+    
     cdef int active
+    cdef int lines
     
     INDEX_FILENAME = b'index.profile'
     CALLS_FILENAME = b'calls.data'
     LINES_FILENAME = b'lines.data'
     
-    def __init__( self, dirname, lines=True, version=1 ):
+    def __cinit__( self, dirname, lines=True, version=1 ):
         """Initialize the profiler (and open all files)
         
         dirname -- directory in which to record profiles 
@@ -258,19 +245,24 @@ cdef class Profiler:
         self.index = IndexWriter( os.path.join( dirname, self.INDEX_FILENAME ) )
         self.index.prefix(version=version)
         calls_filename = os.path.join( dirname, self.CALLS_FILENAME )
-        self.calls = CallsWriter( calls_filename )
+        self.calls = DataWriter( calls_filename )
         self.index.write_datafile( calls_filename, 'calls' )
-        if lines:
-            lines_filename = os.path.join( dirname, self.LINES_FILENAME )
-            self.lines = LinesWriter( lines_filename )
-            self.index.write_datafile( lines_filename, 'lines' )
-        else:
-            self.lines = None
+        
+        self.lines = lines
         
         self.files = {}
         self.functions = {}
         self.threads = {}
         self.active = False
+        
+        self.LINE_FLAGS = 0 << 24 # just for consistency
+        self.CALL_FLAGS = 1 << 24
+        self.RETURN_FLAGS = 2 << 24
+    def __dealloc__( self ):
+        self.index.close()
+        self.calls.close()
+        self.index = None 
+        self.calls = None 
         
     cdef uint32_t file_to_number( self, PyCodeObject code ):
         """Convert a code reference to a file number"""
@@ -329,31 +321,46 @@ cdef class Profiler:
         cdef int func_number 
         cdef uint32_t ts = self.timestamp()
         func_number = self.func_to_number( frame )
-        self.calls.write_callinfo( self.thread_id( frame ), self.stack_depth(frame), func_number, ts)
+        self.calls.write_callinfo( 
+            self.thread_id( frame ), 
+            func_number, 
+            ts, 
+            frame.f_lineno,
+            self.CALL_FLAGS,
+        )
         
     cdef write_c_call( self, PyFrameObject frame, PyCFunctionObject * func ):
         cdef long id 
         cdef uint32_t ts = self.timestamp()
         cdef uint32_t func_number = self.builtin_to_number( func )
-        self.calls.write_callinfo( self.thread_id( frame ), self.stack_depth(frame), func_number, ts)
+        self.calls.write_callinfo( 
+            self.thread_id( frame ), 
+            func_number, 
+            ts, 
+            frame.f_lineno,
+            self.CALL_FLAGS,
+        )
         
     cdef write_return( self, PyFrameObject frame ):
         cdef uint32_t ts = self.timestamp()
         self.calls.write_callinfo( 
             self.thread_id( frame ), 
-            # NOTE the - here!
-            -self.stack_depth(frame),
             self.func_to_number( frame ), 
-            ts
+            ts,
+            frame.f_lineno,
+            self.RETURN_FLAGS,
         )
         
     cdef write_line( self, PyFrameObject frame ):
         cdef uint32_t ts = self.timestamp()
-        self.lines.write_lineinfo( 
-            self.thread_id( frame ), 
-            self.func_to_number( frame ), 
-            frame.f_lineno, 
-            ts 
+        cdef uint16_t thread = self.thread_id( frame )
+        cdef uint32_t function =  self.func_to_number( frame )
+        self.calls.write_callinfo( 
+            thread, 
+            function, 
+            ts,
+            frame.f_lineno & 0xffff, 
+            self.LINE_FLAGS,
         )
     
     # State introspection mechanisms
@@ -389,10 +396,6 @@ cdef class Profiler:
         cdef PY_LONG_LONG delta
         current = hpTimer()
         return <uint32_t>( current - self.internal_start - self.internal_discount)
-    cdef public PY_LONG_LONG discount( self, PY_LONG_LONG delta ):
-        """Discount the time since the last call to hpTimer()"""
-        self.internal_discount += delta 
-        return self.internal_discount
     
     # External api
     def start( self ):
@@ -403,7 +406,7 @@ cdef class Profiler:
         self.internal_discount = 0
         self.internal_start = hpTimer()
         PyEval_SetProfile(profile_callback, self)
-        if self.lines is not None:
+        if self.lines:
             PyEval_SetTrace(trace_callback, self)
     def stop( self ):
         """Remove the currently installed profiler (even if it is not us)"""
@@ -411,12 +414,10 @@ cdef class Profiler:
             return 
         self.active = False
         coldshot_unset_profile()
-        if self.lines is not None:
+        if self.lines:
             coldshot_unset_trace()
         self.index.flush()
         self.calls.flush()
-        if self.lines:
-            self.lines.flush()
 
 cdef bytes module_name( PyCFunctionObject func ):
     cdef object local_mod

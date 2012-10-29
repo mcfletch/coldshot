@@ -33,15 +33,6 @@ cdef class CallsFile(MappedFile):
         self.record_count = self.filesize // sizeof( call_info )
     def __iter__( self ):
         return CallsIterator( self )
-cdef class LinesFile(MappedFile):
-    cdef line_info * records
-    def get_pointer( self, mm ):
-        cdef mmap_object * c_level
-        c_level = <mmap_object *>mm
-        self.records = <line_info *>(c_level[0].data)
-        self.record_count = self.filesize // sizeof( line_info )
-    def __iter__( self ):
-        return LinesIterator( self )
         
 cdef class CallsIterator:
     cdef CallsFile records
@@ -52,18 +43,6 @@ cdef class CallsIterator:
     def __next__( self ):
         if self.position < self.records.record_count:
             result = <object>(self.records.records[self.position])
-            self.position += 1
-            return result 
-        raise StopIteration( self.position )
-cdef class LinesIterator:
-    cdef LinesFile lines 
-    cdef long position
-    def __cinit__( self, lines ):
-        self.lines = lines 
-        self.position = 0
-    def __next__( self ):
-        if self.position < self.lines.record_count:
-            result = <object>(self.lines.records[self.position])
             self.position += 1
             return result 
         raise StopIteration( self.position )
@@ -86,6 +65,9 @@ cdef class FunctionCallInfo:
         self.function.record_call()
         self.function.record_time_spent( delta )
         return delta
+    cdef public uint32_t record_stop_child( self, uint32_t stop, uint32_t child ):
+        """Child has exited, record time spent in the child"""
+        
 cdef class ThreadTimeInfo:
     cdef uint16_t thread 
     cdef uint32_t last_ts 
@@ -154,11 +136,11 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
     
     cdef public long calls 
     cdef public long recursive_calls # TODO
-    cdef public long local_time
+    cdef public long child_time
     cdef public long time
     
     cdef public object line_map 
-    cdef public list children # TODO
+    cdef public object child_map
     
     def __cinit__( self, short int id, str module, str name, FileInfo file, short int line ):
         self.id = id
@@ -167,10 +149,14 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
         self.file = file
         self.line = line
         self.calls = 0
+        self.child_time = 0
         self.recursive_calls = 0
         
         self.line_map = {}
-        self.children = []
+        self.child_map = {}
+    @property 
+    def local_time( self ):
+        return self.time - self.child_time
     
     cdef record_call( self ):
         """Increment our internal call counter"""
@@ -178,13 +164,12 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
     cdef record_time_spent( self, uint32_t delta ):
         """Record total time spent in the function (cumtime)"""
         self.time += delta 
-#    cdef record_time_spent_child( self, short int child, uint32_t delta ):
-#        self.time += delta 
-#        # Yes, a linear scan, but on a very short list...
-#        for my_child in self.children:
-#            if my_child.id == child:
-#                my_child.time += delta 
-#        self.children.append( ChildCall( child, delta ))
+    cdef record_time_spent_child( self, uint32_t child, uint32_t delta ):
+        cdef long current
+        self.child_time += delta 
+        current = self.child_map.get( child, 0 )
+        self.child_map[child] = current + delta
+    
     def info_for_line( self, uint16_t line ):
         """Get/create FunctionLineInfo for given line"""
         line_object = self.line_map.get( line )
@@ -207,6 +192,17 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
             self.calls,
             self.time/SECONDS_FACTOR,
         )
+
+cdef class ThreadStack:
+    cdef uint16_t thread 
+    cdef list function_stack # list of FunctionCallInfo instances 
+    cdef list line_stack # list of FunctionLineInfo instances...
+    cdef uint32_t last_ts # last timestamp seen in the thread...
+    def __cinit__( self, uint16_t thread ):
+        self.thread = thread
+        self.function_stack = []
+        self.line_stack = []
+        self.last_ts = 0
 
 cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
     """Loader for Coldshot profiles
@@ -292,67 +288,69 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         The index *must* have been loaded or we will raise KeyError when we 
         attempt to find our FunctionInfo records
         """
-        cdef uint16_t current_thread
-        cdef uint16_t thread
+        # State-lookup speedups.
+        cdef uint16_t current_thread # whether we need to load new thread info
+        cdef uint32_t current_function # the function currently being processed...
+        cdef ThreadStack stack # current stack (thread)
+        cdef FunctionInfo function_info # current function 
+        cdef uint32_t last_ts # for this thread...
+        
+        # incoming record information
+        cdef uint16_t thread 
+        cdef uint32_t function
         cdef uint32_t timestamp
+        cdef uint32_t flags 
+        cdef uint16_t line
+
+        # Canonical state storage...
         cdef dict stacks
-        cdef list stack 
-        cdef FunctionInfo func 
+        
+        # The source data...
         cdef CallsFile calls_data = CallsFile( calls_filename )
         
         current_thread = 0
         stacks = {}
         for i in range( calls_data.record_count ):
             thread = calls_data.records[i].thread
+            function = calls_data.records[i].function & 0x00ffffff
             timestamp = calls_data.records[i].timestamp
+            flags = (calls_data.records[i].function & 0xff000000) >> 24
+            line = calls_data.records[i].line
             
             if thread != current_thread:
+                # we are following a thread context switch, 
+                # we should *likely* track that somewhere...
                 stack = stacks.get( thread )
                 if stack is None:
-                    stacks[thread] = stack = []
+                    stacks[thread] = ThreadStack( thread )
                 current_thread = thread
+                last_ts = stack.last_ts
             
-            if calls_data.records[i].stack_depth >= 0:
-                # is a call...
-                func = <FunctionInfo>self.functions[calls_data.records[i].function]
-                stack.append( FunctionCallInfo( func, timestamp ) )
-            else:
-                # is a return
-                (<FunctionCallInfo>(stack[-1])).record_stop( timestamp )
+            if function != current_function:
+                # we have switched functions, need to get the new function's record...
+                function_info = <FunctionInfo>self.functions[function]
+                current_function = function
+            
+            if flags == 1: # call...
+                stack.function_stack.append( FunctionCallInfo( function_info, timestamp ) )
+                # TODO: add a new line to the stack for the start of the function...
+                last_ts = timestamp
+            elif flags == 2: # return 
+                child_delta = (<FunctionCallInfo>(stack.function_stack[-1])).record_stop( timestamp )
                 del stack[-1]
+                if stack.function_stack:
+                    function_info = stack.function_stack[-1]
+                    # child is current_function...
+                    function_info.record_stop_child( child_delta, current_function )
+                    # update for the next loop...
+                    current_function = function_info.id
+                last_ts = timestamp
+#            elif flags == 0: # line...
+#                # we know current function exists, but there's no guarantee that the function 
+#                # was called within the profile operation (it is know that there will be times 
+#                # it was not, in fact), so we need to pull a line-specific stack for this...
+#                
+#                line_info_c = (<FunctionLineInfo>(thread_info.last_record))
+#                delta = thread_info.line_ts( timestamp )
+#                line_info_c.add_time( delta )
         calls_data.close()
-    
-    def process_lines( self, lines_filename ):
-        """Do initial processing of a lines file to produce FileInfo records"""
-        cdef LinesFile lines_data = LinesFile( lines_filename )
-        cdef object thread_object
-        cdef ThreadTimeInfo thread_info
-        cdef FunctionInfo function_info 
-        cdef FunctionLineInfo line_info_c
-        
-        cdef uint16_t current_thread
-        cdef uint16_t thread
-        cdef uint32_t timestamp
-        cdef uint32_t delta
-        
-        cdef dict threads = {}
-        current_thread = 0
-        
-        for i in range( lines_data.record_count ):
-            thread = lines_data.records[i].thread
-            timestamp = lines_data.records[i].timestamp
-            if thread != current_thread:
-                thread_object  = threads.get( thread )
-                if thread_object is None:
-                    thread_info = ThreadTimeInfo( thread, timestamp )
-                    threads[ thread ] = thread_info
-                else:
-                    thread_info = <ThreadTimeInfo>thread_object
-            if i > 0:
-                assert thread_info.last_record
-                line_info_c = (<FunctionLineInfo>(thread_info.last_record))
-                delta = thread_info.line_ts( timestamp )
-                line_info_c.add_time( delta )
-            function_info = <FunctionInfo>(self.functions[ lines_data.records[i].funcno ])
-            thread_info.set_last_line( function_info.info_for_line( lines_data.records[i].lineno ) )
-    
