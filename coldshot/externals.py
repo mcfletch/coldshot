@@ -82,10 +82,6 @@ def report():
     print report.report()
     return 0
 
-def raw_lines():
-    scanner = loader.LinesFile( sys.argv[1] )
-    for line in scanner:
-        print line
 def raw_calls():
     scanner = loader.CallsFile( sys.argv[1] )
     for line in scanner:

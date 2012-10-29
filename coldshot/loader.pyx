@@ -9,6 +9,7 @@ __all__ = ("Loader",)
 SECONDS_FACTOR = 1000000.00
 
 cdef class MappedFile:
+    """Memory-mapped file used for scanning large data-files"""
     cdef object filename 
     cdef long filesize
     cdef object fh 
@@ -25,6 +26,7 @@ cdef class MappedFile:
         self.fh.close()
     
 cdef class CallsFile(MappedFile):
+    """Particular mapped file which loads our callsfile data-structures"""
     cdef call_info * records 
     def get_pointer( self, mm ):
         cdef mmap_object * c_level
@@ -35,6 +37,7 @@ cdef class CallsFile(MappedFile):
         return CallsIterator( self )
         
 cdef class CallsIterator:
+    """Provide python-level iteration over a CallsFile"""
     cdef CallsFile records
     cdef long position
     def __cinit__( self, records ):
@@ -47,14 +50,8 @@ cdef class CallsIterator:
             return result 
         raise StopIteration( self.position )
     
-def test_mmap( filename ):
-    """Test mmaping a file into call_info structures"""
-    cf = CallsFile( filename )
-    for i in range( cf.record_count ):
-        print cf.records[i].thread
-    cf.close()
-
 cdef class FunctionCallInfo:
+    """Tracks information related to a single Function call (stack frame)"""
     cdef FunctionInfo function 
     cdef uint32_t start 
     cdef uint16_t last_line 
@@ -69,8 +66,9 @@ cdef class FunctionCallInfo:
         self.function.record_call()
         self.function.record_time_spent( delta )
         return delta
-    cdef public uint32_t record_stop_child( self, uint32_t stop, uint32_t child ):
+    cdef public uint32_t record_stop_child( self, uint32_t delta, uint32_t child ):
         """Child has exited, record time spent in the child"""
+        self.function.record_time_spent_child( child, delta )
     cdef record_line( self, uint16_t new_line, uint32_t stop, int exit ):
         """Record time spent on a given line"""
         cdef FunctionLineInfo current = self.function.line_map.get( self.last_line, None )
@@ -78,33 +76,12 @@ cdef class FunctionCallInfo:
         if current is None:
             self.function.line_map[self.last_line] = current = FunctionLineInfo( self.last_line )
         current.add_time( delta, exit )
-        
         self.last_line = new_line 
         self.last_line_time = stop 
         return 
-        
-cdef class ThreadTimeInfo:
-    cdef uint16_t thread 
-    cdef uint32_t last_ts 
-    cdef object last_record
-    def __cinit__( self, uint16_t thread, uint32_t last_ts ):
-        self.thread = thread 
-        self.last_ts = last_ts
-    def line_ts( self, uint32_t new_ts ):
-        cdef uint32_t delta = new_ts - self.last_ts
-        self.last_ts = new_ts 
-        return delta 
-    cdef set_last_line( self, last_record ):
-        self.last_record = last_record
-
-cdef class ChildCall:
-    cdef uint16_t id
-    cdef uint32_t time
-    def __cinit__( self, uint16_t id, uint32_t time ):
-        self.id = id 
-        self.time = time 
 
 cdef public class FunctionLineInfo [object Coldshot_FunctionLineInfo, type Coldshot_FunctionLineInfo_Type]:
+    """Timing of a single line within a function"""
     cdef public uint16_t line 
     cdef public uint32_t time 
     cdef public uint32_t calls
@@ -120,6 +97,11 @@ cdef public class FunctionLineInfo [object Coldshot_FunctionLineInfo, type Colds
         return b'Line %s: %s %.4fs'%( self.line, self.calls, self.time/SECONDS_FACTOR, )
     
 cdef public class FileInfo [object Coldshot_FileInfo, type Coldshot_FileInfo_Type]:
+    """Referenced by functions which declare the same file
+    
+    All built-in functions currently declare the same file number (0), so all 
+    built-ins will appear to come from a single file.
+    """
     cdef object filename 
     cdef uint16_t fileno 
     def __cinit__( self, filename, fileno ):
@@ -143,6 +125,7 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
         calls -- count of calls on the function 
         time -- cumulative time spent in the function
         line_map -- line: FunctionLineInfo mapping for each line executed
+        child_map -- child_id: time for each called child...
     """
     cdef public short int id
     cdef public str module 
@@ -181,24 +164,22 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
         """Record total time spent in the function (cumtime)"""
         self.time += delta 
     cdef record_time_spent_child( self, uint32_t child, uint32_t delta ):
+        """Record time spent in a given child function"""
         cdef long current
         self.child_time += delta 
         current = self.child_map.get( child, 0 )
         self.child_map[child] = current + delta
     
-    def info_for_line( self, uint16_t line ):
-        """Get/create FunctionLineInfo for given line"""
-        line_object = self.line_map.get( line )
-        if line_object is None:
-            self.line_map[line] = line_object = FunctionLineInfo( line )
-        return line_object
     def __unicode__( self ):
         seconds = self.time / SECONDS_FACTOR
-        return u'%s % 5i % 5.4fs % 5.4fs'%(
+        local = (self.time-self.child_time)/ SECONDS_FACTOR
+        return u'%s % 5i % 5.4fs % 5.4fs % 5.4ss % 5.4s'%(
             self.name.ljust(30),
             self.calls,
             seconds,
-            seconds/self.calls
+            seconds/self.calls,
+            local,
+            local/self.calls,
         )
     def __repr__( self ):
         return '<%s %s:%s %s:%ss>'%(
