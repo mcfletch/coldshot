@@ -193,13 +193,10 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
 cdef class ThreadStack:
     cdef uint16_t thread 
     cdef list function_stack # list of FunctionCallInfo instances 
-    cdef list line_stack # list of FunctionLineInfo instances...
-    cdef uint32_t last_ts # last timestamp seen in the thread...
     def __cinit__( self, uint16_t thread ):
+        cdef uint32_t initial_ts = 0
         self.thread = thread
         self.function_stack = []
-        self.line_stack = []
-        self.last_ts = 0
 
 cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
     """Loader for Coldshot profiles
@@ -289,7 +286,6 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         cdef ThreadStack stack # current stack (thread)
         cdef FunctionInfo function_info # current function 
         cdef FunctionCallInfo call_info # temp for function being called...
-        cdef uint32_t last_ts # for this thread...
         
         # incoming record information
         cdef uint16_t thread 
@@ -320,7 +316,6 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                 if stack is None:
                     stacks[thread] = stack = ThreadStack( thread )
                 current_thread = thread
-                last_ts = stack.last_ts
             
             if function != current_function:
                 # we have switched functions, need to get the new function's record...
@@ -329,8 +324,6 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
             
             if flags == 1: # call...
                 stack.function_stack.append( FunctionCallInfo( function_info, timestamp ) )
-                # TODO: add a new line to the stack for the start of the function...
-                last_ts = timestamp
             elif flags == 2: # return 
                 call_info = <FunctionCallInfo>(stack.function_stack[-1])
                 call_info.record_line( call_info.function.line, timestamp, 0 )
@@ -343,7 +336,6 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                     # update for the next loop...
                     function_info = call_info.function 
                     current_function = call_info.function.id
-                last_ts = timestamp
             elif flags == 0: # line...
                 # we know current function exists, but there's no guarantee that the function 
                 # was called within the profile operation (it is know that there will be times 
