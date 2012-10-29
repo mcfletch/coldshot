@@ -6,13 +6,16 @@ def blah():
     return True
 
 def sleep( t ):
+    """A python function that takes a given amount of time"""
     time.sleep( t )
     
 def slow_lines():
+    """Each line here should have ~ the time assigned in the parameter"""
     time.sleep( .001 )
     time.sleep( .01 )
     time.sleep( .1 )
 def slow_calls():
+    """Each line here should have ~ the time assigned in the parameter"""
     sleep( .001 )
     sleep( .01 )
     sleep( .1 )
@@ -68,20 +71,23 @@ class TestProfiler( TestCase ):
     def test_line_timings_vs_calls( self ):
         self.profiler.start()
         slow_lines()
+        slow_calls()
         self.profiler.stop()
         
         load = loader.Loader( self.test_dir )
         load.load()
-        slow_func = load.function_names['tests.test_profiler','slow_lines']
-        assert len(slow_func.line_map) == 3, slow_func.line_map
-        sorted_lines = [x[1] for x in sorted( slow_func.line_map.items())]
-        multiplier = 1000000
-        for line,(low,high) in zip(sorted_lines,[
-            (.001,.002),
-            (.01,.011),
-            (.1,.101),
-        ]):
-            assert line.time > low * multiplier, line 
-            assert line.time < high * multiplier, line 
-        line_total = sum([ x.time for x in sorted_lines ])
-        assert slow_func.time-line_total < .001*multiplier, (line_total, slow_func.time)
+        for name in ['slow_lines','slow_calls']:
+            slow_func = load.function_names['tests.test_profiler',name]
+            assert len(slow_func.line_map) == 3, slow_func.line_map
+            sorted_lines = [x[1] for x in sorted( slow_func.line_map.items())]
+            multiplier = 1000000
+            for line,(low,high) in zip(sorted_lines,[
+                (.001,.002),
+                (.01,.011),
+                (.1,.101),
+            ]):
+                assert line.time > low * multiplier, line 
+                assert line.time < high * multiplier, line 
+            line_total = sum([ x.time for x in sorted_lines ])
+            assert slow_func.time-line_total < .001*multiplier, (line_total, slow_func.time)
+            
