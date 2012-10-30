@@ -114,7 +114,7 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
     
     Attributes of note:
     
-        id -- ID used in the trace 
+        key -- ID/Key used in the trace to identify this function
         module -- name of the module and class (x.y.z)
         name -- name of the function/method
         file -- FileInfo for the module, note: builtins all use the same FileInfo
@@ -126,7 +126,7 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
         line_map -- line: FunctionLineInfo mapping for each line executed
         child_map -- child_id: time for each called child...
     """
-    cdef public short int id
+    cdef public short int key
     cdef public str module 
     cdef public str name 
     cdef public FileInfo file
@@ -141,8 +141,9 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
     cdef public object child_map
     cdef public object loader
     
-    def __cinit__( self, short int id, str module, str name, FileInfo file, short int line, object loader ):
-        self.id = id
+    def __cinit__( self, short int key, str module, str name, FileInfo file, short int line, object loader ):
+        """Initialize the FunctionInfo instance"""
+        self.key = key
         self.loader = loader
         self.module = module 
         self.name = name 
@@ -170,6 +171,18 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
         self.child_time += delta 
         current = self.child_map.get( child, 0 )
         self.child_map[child] = current + delta
+    
+    def sorted_children( self ):
+        """Retrieve our children records from our loader in time-sorted order
+        
+        returns [(cumtime,otherfunc), ... ] for all of our called children
+        """
+        children = [(v,self.loader.functions.get(k)) for (k,v) in self.child_map.items()]
+        children.sort()
+        return children
+    def child_cumulative_time( self, other ):
+        """Return cumulative time spent in other as a fraction of our time cumulative time"""
+        return self.child_map.get(other.key, 0)/float( self.time or 1 )
     
     def __unicode__( self ):
         seconds = self.time
@@ -253,6 +266,8 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
     cdef public dict file_names
     cdef public dict functions 
     cdef public dict function_names
+    
+    cdef public FunctionInfo root
     
     def __cinit__( self, directory ):
         self.directory = directory
@@ -363,6 +378,7 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         
         current_thread = 0
         stacks = {}
+        
         for i in range( calls_data.record_count ):
             thread = calls_data.records[i].thread
             if self.swapendian:
@@ -393,6 +409,9 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                 function_info = <FunctionInfo>self.functions[function]
                 current_function = function
             
+            if i == 0:
+                self.root = function_info
+                
             if flags == 1: # call...
                 call_info = FunctionCallInfo( function_info, timestamp )
                 stack.function_stack.append( call_info )
@@ -409,7 +428,7 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                     call_info.record_stop_child( child_delta, current_function )
                     # update for the next loop...
                     function_info = call_info.function 
-                    current_function = call_info.function.id
+                    current_function = call_info.function.key
             elif flags == 0: # line...
                 # we know current function exists, but there's no guarantee that the function 
                 # was called within the profile operation (it is know that there will be times 
@@ -422,3 +441,13 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                 call_info.record_line( line, timestamp, 0 )
             
         calls_data.close()
+
+    def parents_of( self, FunctionInfo child ):
+        """Retrieve those functions who are parents of functioninfo"""
+        cdef FunctionInfo possible 
+        result = []
+        for possible in self.functions.itervalues():
+            if child.key in possible.child_map:
+                result.append( possible )
+        return result 
+    
