@@ -57,7 +57,7 @@ def runctx( code, globals=None, locals=None, prof_dir=None, lines=False ):
 def profile_options( ):
     """Create an option parser for the main profile operation"""
     usage = "coldshot -o output_directory path/to/scriptfile [arg] ..."
-    parser = OptionParser( usage )
+    parser = OptionParser( usage=usage, add_help_option=True )
     parser.add_option( 
         '-o', '--output', dest='output', metavar='DIRECTORY', default='.profile',
         help='Directory to which to write output (file index.profile will be created here)',
@@ -68,11 +68,10 @@ def profile_options( ):
         default = False,
         help='Perform line-level tracing (requires an extra 2.5MB/s of disk space)',
     )
-    # 
     parser.disable_interspersed_args()
     return parser
     
-def profile(args=None):
+def profile():
     """Primary external entry point for profiling 
     
     $ coldshot -o outdirectory scriptfile [arg ... ]
@@ -82,7 +81,7 @@ def profile(args=None):
     """
     import os, sys
     parser = profile_options()
-    options,args = parser.parse_args(args or sys.argv)
+    options,args = parser.parse_args()
     args = args[1:]
     
     if not args:
