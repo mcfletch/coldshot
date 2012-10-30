@@ -195,23 +195,28 @@ cdef class ThreadStack:
         self.thread = thread
         self.function_stack = []
 
-cdef swap_16( uint16_t input ):
+def byteswap_16( input ):
+    return swap_16( input )
+def byteswap_32( input ):
+    return swap_32( input )
+        
+cdef uint16_t swap_16( uint16_t input ):
     """Byte-swap a 16-bit integer"""
-    uint16_t output 
-    uint16_t low_mask = 0x00ff 
-    uint16_t high_mask = 0xff00
-    uint16_t shift = 8
+    cdef uint16_t output 
+    cdef uint16_t low_mask = 0x00ff 
+    cdef uint16_t high_mask = 0xff00
+    cdef uint16_t shift = 8
     output = ((input & low_mask) << shift) | ((input & high_mask) >> shift)
     return output
-cdef swap_32( uint32_t input ):
+cdef uint32_t swap_32( uint32_t input ):
     """Byte-swap a 32-bit integer"""
-    uint32_t output 
-    uint32_t low_mask = 0x000000ff 
-    uint32_t low_mid_mask = 0x0000ff00
-    uint32_t high_mid_mask = 0x00ff0000
-    uint32_t high_mask = 0xff000000
-    uint32_t small_shift = 8
-    uint32_t big_shift = 24
+    cdef uint32_t output 
+    cdef uint32_t low_mask = 0x000000ff 
+    cdef uint32_t low_mid_mask = 0x0000ff00
+    cdef uint32_t high_mid_mask = 0x00ff0000
+    cdef uint32_t high_mask = 0xff000000
+    cdef uint32_t small_shift = 8
+    cdef uint32_t big_shift = 24
     output = (
         (input & low_mask) << big_shift |
         (input & low_mid_mask) << small_shift | 
@@ -219,8 +224,7 @@ cdef swap_32( uint32_t input ):
         (input & high_mask ) >> big_shift
     )
     return output
-    
-        
+
 cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
     """Loader for Coldshot profiles
     
@@ -265,8 +269,7 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
     def load( self ):
         """Scan our data-files for basic index information"""
         self.process_index( self.index_filename )
-        for call_file in self.call_files:
-            self.process_calls( call_file )
+        self.process_calls( )
     def unquote( self, name ):
         """Remove quoting to get the original name"""
         return urllib.unquote( name )
@@ -313,7 +316,11 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                     self.call_files.append( line[2] )
                 else:
                     log.error( "Unrecognized data-file type: %s %s", line[1], line[2] )
-    def process_calls( self, calls_filename ):
+    def process_calls( self ):
+        """Process all of our call files"""
+        for call_file in self.call_files:
+            self.process_call_file( call_file )
+    def process_call_file( self, calls_filename ):
         """Process a CallsFile to extract basic cProfile-like information
         
         Fills in the FunctionInfo members in self.functions with the 
@@ -346,6 +353,8 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         # The source data...
         cdef CallsFile calls_data = CallsFile( calls_filename )
         
+        function_info = None
+        
         current_thread = 0
         stacks = {}
         for i in range( calls_data.record_count ):
@@ -373,7 +382,7 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                     stacks[thread] = stack = ThreadStack( thread )
                 current_thread = thread
             
-            if function != current_function:
+            if function != current_function or function_info is None:
                 # we have switched functions, need to get the new function's record...
                 function_info = <FunctionInfo>self.functions[function]
                 current_function = function

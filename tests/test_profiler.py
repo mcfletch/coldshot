@@ -90,7 +90,25 @@ class TestProfiler( TestCase ):
                 assert line.time < high * multiplier, line 
             line_total = sum([ x.time for x in sorted_lines ])
             assert slow_func.time-line_total < .001*multiplier, (line_total, slow_func.time)
-            
+    def test_load_byteswapped( self ):
+        self.profiler.start()
+        for i in range(5):
+            pass 
+        self.profiler.stop()
+        
+        load = loader.Loader( self.test_dir )
+        load.process_index( load.index_filename )
+        load.swapendian = True 
+        self.assertRaises( KeyError, load.process_calls )
+        
+        this_key = ('tests.test_profiler','test_load_byteswapped')
+        assert this_key in load.function_names 
+    
+    def test_byteswap( self ):
+        assert loader.byteswap_16( 0xff00 ) == 0xff,  loader.byteswap_16( 0xff00 )
+        assert loader.byteswap_16( 0x00ff ) == 0xff00, loader.byteswap_16( 0x00ff )
+        assert loader.byteswap_32( 0x89abcdef ) == 0xefcdab89, hex(loader.byteswap_32( 0x89abcdef ))
+        
 #    def test_enter_exit( self ):
 #        with self.profiler:
 #            for i in range(3):
