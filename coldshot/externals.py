@@ -56,8 +56,16 @@ def runctx( code, globals=None, locals=None, prof_dir=None, lines=False ):
 
 def profile_options( ):
     """Create an option parser for the main profile operation"""
-    usage = "coldshot -o output_directory path/to/scriptfile [arg] ..."
-    parser = OptionParser( usage=usage, add_help_option=True )
+    usage = "%prog -o output_directory path/to/scriptfile [arg] ..."
+    description = """Profile a script under the Coldshot profiler,
+produces a directory of profile information, overwriting any 
+existing profile information in doing so.
+
+Coldshot produces a very large trace (1.5 to 4MB/s), 
+so it should not be run on long-running processes."""
+    parser = OptionParser( 
+        usage=usage, add_help_option=True, description=description,
+    )
     parser.add_option( 
         '-o', '--output', dest='output', metavar='DIRECTORY', default='.profile',
         help='Directory to which to write output (file index.profile will be created here)',
@@ -99,16 +107,6 @@ def profile():
     }
     runctx(code, globals, None, prof_dir=options.output, lines=options.lines)
     return 0
-
-def report_options( ):
-    """Create an option parser for the main profile operation"""
-    usage = "coldshot-report [options] output_directory\n"
-    parser = OptionParser( usage )
-    parser.add_option( 
-        '-o', '--output', dest='output', metavar='DIRECTORY', default='.profile',
-        help='Directory to which to write output (file index.profile will be created here)',
-    )
-    return parser
 
 def report():
     """Load the data-set and print a basic report"""
