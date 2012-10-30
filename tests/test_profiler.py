@@ -1,6 +1,6 @@
 from unittest import TestCase
 from coldshot import profiler, loader 
-import numpy, tempfile, os, shutil, time
+import tempfile, os, shutil, time
 
 def blah():
     return True

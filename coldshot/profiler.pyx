@@ -198,7 +198,7 @@ cdef class IndexWriter(object):
             self.should_close = False
     def prefix( self, version=1 ):
         """Write our version prefix to the data-file"""
-        message = b'P COLDSHOTBinary version=%d bigendian=%s timerunit=%f\n'%( 
+        message = b'P COLDSHOTBinary version=%d bigendian=%s timer_unit=%f\n'%( 
             version, sys.byteorder=='big', 
             TIMER_UNIT 
         )

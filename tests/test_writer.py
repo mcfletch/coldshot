@@ -33,5 +33,5 @@ class TestWriter( TestCase ):
         assert split[0] == 'P'
         assert split[2] == 'version=3'
         assert split[3] == 'bigendian=False', """Coldshot has not yet been tested on big-endian platforms"""
-        assert split[4].startswith( 'timerunit=' ), split[4]
+        assert split[4].startswith( 'timer_unit=' ), split[4]
     

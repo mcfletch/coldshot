@@ -155,9 +155,13 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
         
         self.line_map = {}
         self.child_map = {}
+    # external data-API showing seconds 
     @property 
-    def local_time( self ):
-        return self.time - self.child_time
+    def local( self ):
+        return (self.time - self.child_time) * self.loader.timer_unit
+    @property 
+    def cumulative( self ):
+        return self.time * self.loader.timer_unit
     
     cdef record_call( self ):
         """Increment our internal call counter"""
@@ -260,7 +264,7 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
     cdef public bint bigendian
     cdef public bint swapendian
     cdef public int version 
-    cdef public float timerunit
+    cdef public double timer_unit
     
     cdef public dict files
     cdef public dict file_names
@@ -282,7 +286,8 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         self.bigendian = False 
         self.swapendian = False
         self.version = 1
-        self.timerunit = .000001
+        self.timer_unit = .000001
+        self.root = None
 
     def load( self ):
         """Scan our data-files for basic index information"""
@@ -306,8 +311,8 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                             self.swapendian = True
                     elif key == 'version':
                         self.version = int(value)
-                    elif key == 'timerunit':
-                        self.timerunit = float( value )
+                    elif key == 'timer_unit':
+                        self.timer_unit = float( value )
             elif line[0] == 'F':
                 # code-file declaration
                 fileno,filename = line[1:3]
@@ -356,6 +361,7 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         cdef ThreadStack stack # current stack (thread)
         cdef FunctionInfo function_info # current function 
         cdef FunctionCallInfo call_info # temp for function being called...
+        cdef FunctionCallInfo root_call
         
         cdef uint32_t flag_mask = 0xff000000
         cdef uint32_t function_mask = 0x00ffffff
@@ -375,6 +381,7 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         cdef CallsFile calls_data = CallsFile( calls_filename )
         
         function_info = None
+        root_call = None
         
         current_thread = 0
         stacks = {}
@@ -408,9 +415,8 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                 # we have switched functions, need to get the new function's record...
                 function_info = <FunctionInfo>self.functions[function]
                 current_function = function
-            
-            if i == 0:
-                self.root = function_info
+                if self.root is None:
+                    self.root = function_info
                 
             if flags == 1: # call...
                 call_info = FunctionCallInfo( function_info, timestamp )
@@ -435,11 +441,15 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                 # it was not, in fact), so we need to pull a line-specific stack for this...
                 if not stack.function_stack:
                     call_info = FunctionCallInfo( function_info, timestamp )
+                    if root_call is None:
+                        root_call = call_info
                     stack.function_stack.append( call_info )
                 else:
                     call_info = stack.function_stack[-1]
                 call_info.record_line( line, timestamp, 0 )
-            
+        if root_call is not None:
+            # top-level function
+            root_call.record_stop( timestamp )
         calls_data.close()
 
     def parents_of( self, FunctionInfo child ):

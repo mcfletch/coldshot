@@ -26,14 +26,14 @@ class Reporter( object ):
                     function.module[-30:].rjust(30),
                     str(function.line).ljust(4),
                     function.name.ljust(20),
-                    function.time * self.loader.timerunit,
+                    function.time * self.loader.timer_unit,
                     function.calls,
-                    function.local_time * self.loader.timerunit,
+                    function.local_time * self.loader.timer_unit,
                 ))
                 for (line,lineinfo) in sorted(function.line_map.items()):
                     report.append( '    % 5d % 8.4f % 8d'%(
                         lineinfo.line,
-                        lineinfo.time * self.loader.timerunit,
+                        lineinfo.time * self.loader.timer_unit,
                         lineinfo.calls,
                     ))
         return '\n'.join( report )
