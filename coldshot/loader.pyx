@@ -119,6 +119,7 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
         name -- name of the function/method
         file -- FileInfo for the module, note: builtins all use the same FileInfo
         line -- line on which the function begins 
+        loader -- reference to the loader which created us...
         
         calls -- count of calls on the function 
         time -- cumulative time spent in the function
@@ -138,9 +139,11 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
     
     cdef public object line_map 
     cdef public object child_map
+    cdef public object loader
     
-    def __cinit__( self, short int id, str module, str name, FileInfo file, short int line ):
+    def __cinit__( self, short int id, str module, str name, FileInfo file, short int line, object loader ):
         self.id = id
+        self.loader = loader
         self.module = module 
         self.name = name 
         self.file = file
@@ -308,7 +311,10 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                 module = self.unquote( module )
                 name = self.unquote( name )
                 self.function_names[ (module,name) ] = self.functions[ funcno ] = FunctionInfo( 
-                    funcno,module,name,self.files[fileno],lineno 
+                    funcno,module,name,
+                    self.files[fileno],
+                    lineno,
+                    self
                 )
             elif line[0] == 'D':
                 # data-file declaration...
