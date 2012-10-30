@@ -65,6 +65,7 @@ cdef extern from 'lowlevel.h':
     void coldshot_unset_profile()
 
 CALL_INFO_SIZE = sizeof( call_info )
+TIMER_UNIT = hpTimerUnit()
     
 __all__ = [
     'timer',
@@ -197,7 +198,10 @@ cdef class IndexWriter(object):
             self.should_close = False
     def prefix( self, version=1 ):
         """Write our version prefix to the data-file"""
-        message = b'P COLDSHOTBinary v%d byteswap=%s\n'%( version, sys.byteorder=='big' )
+        message = b'P COLDSHOTBinary version=%d bigendian=%s timerunit=%f\n'%( 
+            version, sys.byteorder=='big', 
+            TIMER_UNIT 
+        )
         self.fh.write( message )
     def write_datafile( self, datafile, type='calls' ):
         """Record the presence of a data-file to be parsed"""

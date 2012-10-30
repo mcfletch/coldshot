@@ -6,8 +6,6 @@ log = logging.getLogger( __name__ )
 
 __all__ = ("Loader",)
 
-SECONDS_FACTOR = 1000000.00
-
 cdef class MappedFile:
     """Memory-mapped file used for scanning large data-files"""
     cdef object filename 
@@ -94,7 +92,7 @@ cdef public class FunctionLineInfo [object Coldshot_FunctionLineInfo, type Colds
         if not exit:
             self.calls += 1
     def __repr__( self ):
-        return b'Line %s: %s %.4fs'%( self.line, self.calls, self.time/SECONDS_FACTOR, )
+        return b'Line %s: %s %.4fs'%( self.line, self.calls, self.time, )
     
 cdef public class FileInfo [object Coldshot_FileInfo, type Coldshot_FileInfo_Type]:
     """Referenced by functions which declare the same file
@@ -171,15 +169,15 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
         self.child_map[child] = current + delta
     
     def __unicode__( self ):
-        seconds = self.time / SECONDS_FACTOR
-        local = (self.time-self.child_time)/ SECONDS_FACTOR
+        seconds = self.time
+        local = (self.time-self.child_time)
         return u'%s % 5i % 5.4fs % 5.4fs % 5.4ss % 5.4s'%(
             self.name.ljust(30),
             self.calls,
             seconds,
-            seconds/self.calls,
+            seconds/float(self.calls or 1),
             local,
-            local/self.calls,
+            local/float(self.calls or 1),
         )
     def __repr__( self ):
         return '<%s %s:%s %s:%ss>'%(
@@ -187,7 +185,7 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
             self.module,
             self.name,
             self.calls,
-            self.time/SECONDS_FACTOR,
+            self.time,
         )
 
 cdef class ThreadStack:
@@ -197,6 +195,32 @@ cdef class ThreadStack:
         self.thread = thread
         self.function_stack = []
 
+cdef swap_16( uint16_t input ):
+    """Byte-swap a 16-bit integer"""
+    uint16_t output 
+    uint16_t low_mask = 0x00ff 
+    uint16_t high_mask = 0xff00
+    uint16_t shift = 8
+    output = ((input & low_mask) << shift) | ((input & high_mask) >> shift)
+    return output
+cdef swap_32( uint32_t input ):
+    """Byte-swap a 32-bit integer"""
+    uint32_t output 
+    uint32_t low_mask = 0x000000ff 
+    uint32_t low_mid_mask = 0x0000ff00
+    uint32_t high_mid_mask = 0x00ff0000
+    uint32_t high_mask = 0xff000000
+    uint32_t small_shift = 8
+    uint32_t big_shift = 24
+    output = (
+        (input & low_mask) << big_shift |
+        (input & low_mid_mask) << small_shift | 
+        (input & high_mid_mask) >> small_shift |
+        (input & high_mask ) >> big_shift
+    )
+    return output
+    
+        
 cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
     """Loader for Coldshot profiles
     
@@ -213,6 +237,11 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
     cdef public list call_files 
     cdef public list line_files 
     
+    cdef public bint bigendian
+    cdef public bint swapendian
+    cdef public int version 
+    cdef public float timerunit
+    
     cdef public dict files
     cdef public dict file_names
     cdef public dict functions 
@@ -228,6 +257,10 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         self.functions = {}
         self.function_names = {}
         self.file_names['__builtin__'] = self.files[0] = FileInfo( '__builtin__', 0 )
+        self.bigendian = False 
+        self.swapendian = False
+        self.version = 1
+        self.timerunit = .000001
 
     def load( self ):
         """Scan our data-files for basic index information"""
@@ -242,7 +275,19 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         for line in open(index_filename):
             line = line.strip( '\n' )
             line = line.split()
-            if line[0] == 'F':
+            if line[0] == 'P':
+                # prefix/metadata declaration...
+                for variable in line[2:]:
+                    key,value = variable.split('=')
+                    if key == 'bigendian':
+                        self.bigendian = value == 'True'
+                        if self.bigendian != (sys.byteorder == 'big'):
+                            self.swapendian = True
+                    elif key == 'version':
+                        self.version = int(value)
+                    elif key == 'timerunit':
+                        self.timerunit = float( value )
+            elif line[0] == 'F':
                 # code-file declaration
                 fileno,filename = line[1:3]
                 fileno = int(fileno)
@@ -305,11 +350,20 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         stacks = {}
         for i in range( calls_data.record_count ):
             thread = calls_data.records[i].thread
-            function = calls_data.records[i].function & function_mask
+            if self.swapendian:
+                thread = swap_16( thread )
+            function = calls_data.records[i].function
+            if self.swapendian:
+                function = swap_32( function )
+            flags = (function & flag_mask) >> flag_shift
+            function = function & function_mask
+            
             timestamp = calls_data.records[i].timestamp
-            flags = (calls_data.records[i].function & flag_mask)
-            flags = flags >> flag_shift
+            if self.swapendian:
+                timestamp = swap_32( timestamp )
             line = calls_data.records[i].line
+            if self.swapendian:
+                line = swap_16( line )
             
             if thread != current_thread:
                 # we are following a thread context switch, 

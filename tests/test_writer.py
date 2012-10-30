@@ -31,5 +31,7 @@ class TestWriter( TestCase ):
         content = open( datafile,'rb' ).read()
         split = content.split()
         assert split[0] == 'P'
-        assert split[2] == 'v3'
-        assert split[3] == 'byteswap=False', """Coldshot has not yet been tested on big-endian platforms"""
+        assert split[2] == 'version=3'
+        assert split[3] == 'bigendian=False', """Coldshot has not yet been tested on big-endian platforms"""
+        assert split[4].startswith( 'timerunit=' ), split[4]
+    

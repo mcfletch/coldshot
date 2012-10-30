@@ -1,4 +1,3 @@
-from .loader import SECONDS_FACTOR
 
 class Reporter( object ):
     def __init__( self, loader, sort=('-time','module','name' )):
@@ -27,14 +26,14 @@ class Reporter( object ):
                     function.module[-30:].rjust(30),
                     str(function.line).ljust(4),
                     function.name.ljust(20),
-                    function.time/SECONDS_FACTOR,
+                    function.time * self.loader.timerunit,
                     function.calls,
-                    function.local_time/SECONDS_FACTOR,
+                    function.local_time * self.loader.timerunit,
                 ))
                 for (line,lineinfo) in sorted(function.line_map.items()):
                     report.append( '    % 5d % 8.4f % 8d'%(
                         lineinfo.line,
-                        lineinfo.time/SECONDS_FACTOR,
+                        lineinfo.time * self.loader.timerunit,
                         lineinfo.calls,
                     ))
         return '\n'.join( report )
