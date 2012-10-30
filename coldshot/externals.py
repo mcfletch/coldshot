@@ -68,7 +68,7 @@ so it should not be run on long-running processes."""
     )
     parser.add_option( 
         '-o', '--output', dest='output', metavar='DIRECTORY', default='.profile',
-        help='Directory to which to write output (file index.profile will be created here)',
+        help='Directory to which to write output (file index.coldshot will be created here)',
     )
     parser.add_option(
         '-l', '--lines', dest='lines',
@@ -90,7 +90,6 @@ def profile():
     import os, sys
     parser = profile_options()
     options,args = parser.parse_args()
-    args = args[1:]
     
     if not args:
         parser.error( "Need a script-file to execute" )

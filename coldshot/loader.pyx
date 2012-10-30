@@ -100,10 +100,13 @@ cdef public class FileInfo [object Coldshot_FileInfo, type Coldshot_FileInfo_Typ
     All built-in functions currently declare the same file number (0), so all 
     built-ins will appear to come from a single file.
     """
-    cdef object filename 
+    cdef public object filename 
+    cdef public object directory
+    cdef public object path 
     cdef uint16_t fileno 
-    def __cinit__( self, filename, fileno ):
-        self.filename = filename 
+    def __cinit__( self, path, fileno ):
+        self.path = path
+        self.directory, self.filename = os.path.split( path )
         self.fileno = fileno 
     def __unicode__( self ):
         return '<%s for %s>'%( self.__class__.__name__, self.filename )
@@ -160,8 +163,33 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
     def local( self ):
         return (self.time - self.child_time) * self.loader.timer_unit
     @property 
+    def empty( self ):
+        """Calculate local time as a fraction of total time"""
+        return (self.time - self.child_time)/float( self.time )
+    @property 
     def cumulative( self ):
         return self.time * self.loader.timer_unit
+    @property 
+    def localPer( self ):
+        return (
+            (self.time - self.child_time) * self.loader.timer_unit /
+            (self.calls or 1)
+        )
+    @property 
+    def cumulativePer( self ):
+        return (
+            (self.time * self.loader.timer_unit) / 
+            (self.calls or 1)
+        )
+    @property 
+    def lineno( self ):
+        return self.line 
+    @property 
+    def filename( self ):
+        return self.file.filename 
+    @property 
+    def directory( self ):
+        return self.file.directory 
     
     cdef record_call( self ):
         """Increment our internal call counter"""
@@ -172,20 +200,30 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
     cdef record_time_spent_child( self, uint32_t child, uint32_t delta ):
         """Record time spent in a given child function"""
         cdef long current
-        self.child_time += delta 
+        if child != self.key:
+            # we don't consider time in ourselves to be a child...
+            self.child_time += delta 
         current = self.child_map.get( child, 0 )
         self.child_map[child] = current + delta
     
+    @property
+    def parents( self ):
+        """Retrieve those functions which directly call me"""
+        return self.loader.parents_of(self)
+    @property
     def sorted_children( self ):
         """Retrieve our children records from our loader in time-sorted order
         
         returns [(cumtime,otherfunc), ... ] for all of our called children
         """
-        children = [(v,self.loader.functions.get(k)) for (k,v) in self.child_map.items()]
+        children = [(v,self.loader.functions.get(k)) for (k,v) in self.child_map.items() if k != self.key]
         children.sort()
         return children
+    @property 
+    def children( self ):
+        return [x[1] for x in self.sorted_children]
     def child_cumulative_time( self, other ):
-        """Return cumulative time spent in other as a fraction of our time cumulative time"""
+        """Return cumulative time spent in other as a fraction of our cumulative time"""
         return self.child_map.get(other.key, 0)/float( self.time or 1 )
     
     def __unicode__( self ):
@@ -460,4 +498,7 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
             if child.key in possible.child_map:
                 result.append( possible )
         return result 
+    def rows( self ):
+        """Produce the set of all rows"""
+        return self.functions.values()
     

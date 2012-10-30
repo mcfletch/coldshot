@@ -250,8 +250,8 @@ cdef class Profiler:
     cdef int active
     cdef int lines
     
-    INDEX_FILENAME = b'index.profile'
-    CALLS_FILENAME = b'calls.data'
+    INDEX_FILENAME = b'index.coldshot'
+    CALLS_FILENAME = b'coldshot.data'
     
     def __init__( self, dirname, lines=True, version=1 ):
         """Initialize the profiler (and open all files)
