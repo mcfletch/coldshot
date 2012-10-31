@@ -135,11 +135,11 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
     
     All times/timestamps are stored in the original profiler units.
     """
-    cdef public short int key
+    cdef public uint32_t key
     cdef public str module 
     cdef public str name 
     cdef public FileInfo file
-    cdef public short int line
+    cdef public uint16_t line
     
     cdef public long calls 
     cdef public long child_time
@@ -152,7 +152,7 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
     cdef public object child_map
     cdef public object loader
     
-    def __cinit__( self, short int key, str module, str name, FileInfo file, short int line, object loader ):
+    def __cinit__( self, uint32_t key, str module, str name, FileInfo file, uint16_t line, object loader ):
         """Initialize the FunctionInfo instance"""
         self.key = key
         self.loader = loader
@@ -252,10 +252,51 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
 cdef class ThreadStack:
     cdef uint16_t thread 
     cdef list function_stack # list of FunctionCallInfo instances 
-    def __cinit__( self, uint16_t thread ):
+    cdef long context_switches
+    cdef uint32_t start 
+    cdef uint32_t stop
+    cdef Loader loader
+    def __cinit__( self, uint16_t thread, FunctionInfo root, uint32_t timestamp, Loader loader ):
         self.thread = thread
+        self.context_switches = 0
+        self.loader = loader
         self.function_stack = []
-
+        self.start = timestamp 
+        self.stop = timestamp
+        self.push( root, timestamp )
+    
+    @property 
+    def cumulative( self ):
+        """Return thread duration in seconds"""
+        return (self.stop - self.start)*self.loader.timer_unit
+    
+    cdef record_context_switch( self, timestamp ):
+        self.context_switches += 1
+    cdef pop( self, uint32_t timestamp ):
+        """Pop a single record from the stack at given timestamp"""
+        cdef FunctionCallInfo call_info 
+        cdef uint32_t current_function 
+        
+        call_info = <FunctionCallInfo>(self.function_stack[-1])
+        call_info.record_line( call_info.function.line, timestamp, 0 )
+        current_function = call_info.function.key 
+        child_delta = call_info.record_stop( timestamp )
+        self.stop = timestamp
+        
+        del self.function_stack[-1]
+        if self.function_stack:
+            call_info = self.function_stack[-1]
+            # child is current_function...
+            call_info.record_stop_child( child_delta, current_function )
+    cdef pop_all( self, timestamp ):
+        """Pop all non-root records"""
+        while len(self.function_stack):
+            self.pop( timestamp )
+    cdef push( self, function_info, timestamp ):
+        """Push a new record onto the function stack"""
+        call_info = FunctionCallInfo( function_info, timestamp )
+        self.function_stack.append( call_info )
+    
 def byteswap_16( input ):
     return swap_16( input )
 def byteswap_32( input ):
@@ -328,7 +369,12 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         self.swapendian = False
         self.version = 1
         self.timer_unit = .000001
-        self.root = None
+        self.root = FunctionInfo( 
+            0xffffffff, '*', '*',
+            self.files[0],
+            0,
+            self
+        )
 
     def load( self ):
         """Scan our data-files for basic index information"""
@@ -397,8 +443,8 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         attempt to find our FunctionInfo records
         """
         # State-lookup speedups.
-        cdef uint16_t current_thread # whether we need to load new thread info
-        cdef uint32_t current_function # the function currently being processed...
+        cdef uint16_t current_thread = 0# whether we need to load new thread info
+        cdef uint32_t current_function = 0 # the function currently being processed...
         cdef ThreadStack stack # current stack (thread)
         cdef FunctionInfo function_info # current function 
         cdef FunctionCallInfo call_info # temp for function being called...
@@ -409,23 +455,21 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         cdef uint32_t flag_shift = 24
         
         # incoming record information
-        cdef uint16_t thread 
-        cdef uint32_t function
-        cdef uint32_t timestamp
-        cdef uint32_t flags 
-        cdef uint16_t line
+        cdef uint16_t thread = 0
+        cdef uint32_t function = 0
+        cdef uint32_t timestamp = 0
+        cdef uint32_t flags = 0
+        cdef uint16_t line = 0
 
         # Canonical state storage...
-        cdef dict stacks
+        cdef dict stacks = {}
         
         # The source data...
         cdef CallsFile calls_data = CallsFile( calls_filename )
         
         function_info = None
-        root_call = None
         
         current_thread = 0
-        stacks = {}
         
         for i in range( calls_data.record_count ):
             thread = calls_data.records[i].thread
@@ -449,7 +493,9 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                 # we should *likely* track that somewhere...
                 stack = stacks.get( thread )
                 if stack is None:
-                    stacks[thread] = stack = ThreadStack( thread )
+                    stacks[thread] = stack = ThreadStack( thread, self.root, timestamp, self )
+                else:
+                    stack.record_context_switch(timestamp)
                 current_thread = thread
             
             if function != current_function or function_info is None:
@@ -460,37 +506,19 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                     self.root = function_info
                 
             if flags == 1: # call...
-                call_info = FunctionCallInfo( function_info, timestamp )
-                stack.function_stack.append( call_info )
+                stack.push( function_info, timestamp )
             elif flags == 2: # return 
                 # TODO: suppress start-of-func lines, as they are not really 
                 # telling us anything about the individual lines...
-                call_info = <FunctionCallInfo>(stack.function_stack[-1])
-                call_info.record_line( call_info.function.line, timestamp, 0 )
-                child_delta = call_info.record_stop( timestamp )
-                del stack.function_stack[-1]
-                if stack.function_stack:
-                    call_info = stack.function_stack[-1]
-                    # child is current_function...
-                    call_info.record_stop_child( child_delta, current_function )
-                    # update for the next loop...
-                    function_info = call_info.function 
-                    current_function = call_info.function.key
+                stack.pop( timestamp )
             elif flags == 0: # line...
                 # we know current function exists, but there's no guarantee that the function 
                 # was called within the profile operation (it is know that there will be times 
                 # it was not, in fact), so we need to pull a line-specific stack for this...
-                if not stack.function_stack:
-                    call_info = FunctionCallInfo( function_info, timestamp )
-                    if root_call is None:
-                        root_call = call_info
-                    stack.function_stack.append( call_info )
-                else:
-                    call_info = stack.function_stack[-1]
+                call_info = stack.function_stack[-1]
                 call_info.record_line( line, timestamp, 0 )
-        if root_call is not None:
-            # top-level function
-            root_call.record_stop( timestamp )
+        for stack in stacks.values():
+            stack.pop_all(timestamp)
         calls_data.close()
 
     def parents_of( self, FunctionInfo child ):
