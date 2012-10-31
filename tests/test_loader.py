@@ -16,8 +16,8 @@ def recurse( x ):
         return x
     else:
         return recurse( x-1 ) + recurse( x-2 )
-    
-class TestProfiler( TestCase ):
+
+class TestLoaderBase( TestCase ):
     first_key = ('tests.test_loader','first_level')
     second_key = ('tests.test_loader','second_level')
     third_key = ('tests.test_loader','third_level')
@@ -29,10 +29,15 @@ class TestProfiler( TestCase ):
         recurse(10)
         first_level()
         self.profiler.stop()
-        self.loader = loader.Loader( self.test_dir )
-        self.loader.load()
+        self.loader = self.create_loader()
+    def create_loader( self ):
+        load = loader.Loader( self.test_dir )
+        load.load()
+        return load
     def tearDown( self ):
         shutil.rmtree( self.test_dir, True )
+    
+class TestLoader( TestLoaderBase ):
         
     def test_cumulative( self ):
         cumulative = self.loader.root.cumulative
@@ -54,4 +59,23 @@ class TestProfiler( TestCase ):
     def test_root_children( self ):
         root = self.loader.function_names[ ('*','*') ]
         assert len( root.children ) == 2, root.children
-    
+
+class TestLoaderIndividual( TestLoaderBase ):
+    def create_loader( self ):
+        load = loader.Loader( self.test_dir, individual_calls=True )
+        load.load()
+        return load
+
+    def test_individual_calls( self ):
+        """Individual call information on functions"""
+        func = self.loader.function_names[ self.first_key ]
+        assert len(func.individual_calls) == 1, func.individual_calls
+        first_level = func.individual_calls[0]
+        children = first_level.children
+        assert len(children) == 2, children
+        for child in children:
+            assert len(child.children) == 2 # second level
+            for grandchild in child.children:
+                assert len(grandchild.children) == 1 # third level
+                for greatgrandchild in grandchild.children:
+                    assert len(greatgrandchild.children) == 0 # time.sleep

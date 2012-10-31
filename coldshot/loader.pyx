@@ -48,19 +48,36 @@ cdef class CallsIterator:
             return result 
         raise StopIteration( self.position )
     
-cdef class FunctionCallInfo:
-    """Tracks information related to a single Function call (stack frame)"""
+cdef class CallInfo:
+    """Tracks information related to a single Stack Frame
+    
+    if loader.individual_calls is True, then we will save these objects 
+    so that the CallInfo records are available
+    
+    Otherwise is just used by the stack to track calls during initial loading.
+    """
     cdef FunctionInfo function 
+    cdef uint16_t thread
     cdef uint32_t start 
+    cdef uint32_t stop
     cdef uint16_t last_line 
     cdef uint32_t last_line_time
-    def __cinit__( self, FunctionInfo function, uint32_t start ):
+    cdef long start_index
+    cdef long stop_index
+    def __cinit__( self, FunctionInfo function, uint32_t start, long start_index, uint16_t thread ):
         self.function = function 
+        self.thread = thread
         self.start = start 
         self.last_line = function.line
         self.last_line_time = start 
-    cdef public uint32_t record_stop( self, uint32_t stop ):
+        self.start_index = start_index
+        self.stop_index = start_index
+        if function.loader.individual_calls:
+            function.individual_calls.append( self )
+    cdef public uint32_t record_stop( self, uint32_t stop, long stop_index ):
         cdef uint32_t delta = stop - self.start 
+        self.stop = stop
+        self.stop_index = stop_index
         self.function.record_call(self.start)
         self.function.record_time_spent( delta )
         return delta
@@ -77,6 +94,65 @@ cdef class FunctionCallInfo:
         self.last_line = new_line 
         self.last_line_time = stop 
         return 
+    @property
+    def cumulative( self ):
+        return (self.stop - self.start) * self.function.loader.timer_unit
+    @property 
+    def children( self ):
+        """Children of a particular call 
+        
+        Return sequence of CallInfo records where:
+        
+            call_info.function.key in self.function.child_map.keys
+            call_info.thread == self.thread 
+            call_info.start_index > self.start_index 
+            call_info.stop_index < self.stop_index 
+        
+        However, that does not take into account recursive calls to the same 
+        function, so we need to prune out such that we have no *overlapping* 
+        calls, that is, once we have the first (lowest) call, we need to remove 
+        anything that is within that call which falls within our set, and do 
+        that for each of the top-level calls found...
+        """
+        cdef FunctionInfo other_func
+        cdef CallInfo call_info
+        cdef list possible
+        
+        possible = []
+        for other in self.function.child_map.keys():
+            other_func = self.function.loader.functions[other]
+            for call_info in other_func.individual_calls:
+                if call_info.thread == self.thread:
+                    if call_info.start_index > self.start_index and call_info.stop_index < self.stop_index:
+                        possible.append( (call_info.start_index,call_info) )
+        return self._remove_overlaps( possible )
+    
+    cdef list _remove_overlaps( self, list possible ):
+        """Remove the overlaps from the list of possible values for children"""
+        cdef list result
+        cdef CallInfo next, first
+        
+        if possible:
+            possible.sort( )
+            first = possible[0][1]
+            result = [ first ]
+            for index,next in possible[1:]:
+                if next.stop_index < first.stop_index:
+                    continue 
+                else:
+                    result.append( next )
+                    first = next 
+        else:
+            result = possible
+        return result
+        
+    
+    def __repr__( self ):
+        return '<%s records[%s:%s] duration=%ss>'%(
+            self.function.name,
+            self.start_index, self.stop_index,
+            self.cumulative,
+        )
 
 cdef public class FunctionLineInfo [object Coldshot_FunctionLineInfo, type Coldshot_FunctionLineInfo_Type]:
     """Timing of a single line within a function"""
@@ -148,9 +224,10 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
     cdef public long first_timestamp
     cdef public long last_timestamp
     
-    cdef public object line_map 
-    cdef public object child_map
-    cdef public object loader
+    cdef public dict line_map 
+    cdef public dict child_map
+    cdef public list individual_calls
+    cdef public Loader loader
     
     def __cinit__( self, uint32_t key, str module, str name, FileInfo file, uint16_t line, object loader ):
         """Initialize the FunctionInfo instance"""
@@ -163,6 +240,7 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
         
         self.line_map = {}
         self.child_map = {}
+        self.individual_calls = []
         
         self.calls = 0
         self.child_time = 0
@@ -221,7 +299,6 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
     def child_cumulative_time( self, other ):
         """Return cumulative time spent in other as a fraction of our cumulative time"""
         return self.child_map.get(other.key, 0)/float( self.time or 1 )
-
         
     # Internal APIs for Loader
     cdef record_call( self, uint32_t timestamp ):
@@ -253,7 +330,7 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
 
 cdef class ThreadStack:
     cdef uint16_t thread 
-    cdef list function_stack # list of FunctionCallInfo instances 
+    cdef list function_stack # list of CallInfo instances 
     cdef long context_switches
     cdef uint32_t start 
     cdef uint32_t stop
@@ -265,7 +342,7 @@ cdef class ThreadStack:
         self.function_stack = []
         self.start = timestamp 
         self.stop = timestamp
-        self.push( root, timestamp )
+        self.push( root, timestamp, -1 )
     
     @property 
     def cumulative( self ):
@@ -274,15 +351,19 @@ cdef class ThreadStack:
     
     cdef record_context_switch( self, timestamp ):
         self.context_switches += 1
-    cdef pop( self, uint32_t timestamp ):
+    cdef push( self, FunctionInfo function_info, uint32_t timestamp, long index ):
+        """Push a new record onto the function stack"""
+        call_info = CallInfo( function_info, timestamp, index, self.thread )
+        self.function_stack.append( call_info )
+    cdef pop( self, uint32_t timestamp, long index ):
         """Pop a single record from the stack at given timestamp"""
-        cdef FunctionCallInfo call_info 
+        cdef CallInfo call_info 
         cdef uint32_t current_function 
         
-        call_info = <FunctionCallInfo>(self.function_stack[-1])
+        call_info = <CallInfo>(self.function_stack[-1])
         call_info.record_line( call_info.function.line, timestamp, 0 )
         current_function = call_info.function.key 
-        child_delta = call_info.record_stop( timestamp )
+        child_delta = call_info.record_stop( timestamp, index )
         self.stop = timestamp
         
         del self.function_stack[-1]
@@ -290,14 +371,6 @@ cdef class ThreadStack:
             call_info = self.function_stack[-1]
             # child is current_function...
             call_info.record_stop_child( child_delta, current_function )
-    cdef pop_all( self ):
-        """Pop all non-root records"""
-        while len(self.function_stack):
-            self.pop( self.stop )
-    cdef push( self, function_info, timestamp ):
-        """Push a new record onto the function stack"""
-        call_info = FunctionCallInfo( function_info, timestamp )
-        self.function_stack.append( call_info )
     
 def byteswap_16( input ):
     return swap_16( input )
@@ -347,6 +420,7 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
     
     cdef public bint bigendian
     cdef public bint swapendian
+    cdef public bint individual_calls
     cdef public int version 
     cdef public double timer_unit
     
@@ -356,11 +430,14 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
     cdef public dict function_names
     cdef public dict threads
     
+    
     cdef public FunctionInfo root
     
-    def __cinit__( self, directory ):
+    def __cinit__( self, directory, individual_calls=False ):
         self.directory = directory
         self.index_filename = os.path.join( directory, profiler.Profiler.INDEX_FILENAME )
+        self.individual_calls = individual_calls
+        
         self.call_files = []
         self.line_files = []
         self.files = {}
@@ -435,6 +512,23 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                     self.call_files.append( line[2] )
                 else:
                     log.error( "Unrecognized data-file type: %s %s", line[1], line[2] )
+    
+    cdef uint16_t swap_16( self, uint16_t input ):
+        if self.swapendian:
+            return swap_16( input )
+        return input 
+    cdef uint32_t swap_32( self, uint32_t input ):
+        if self.swapendian:
+            return swap_32( input )
+        return input
+    cdef uint32_t extract_function( self, uint32_t input ):
+        cdef uint32_t function_mask = 0x00ffffff
+        return input & function_mask
+    cdef uint32_t extract_flags( self, uint32_t input ):
+        cdef uint32_t flag_mask = 0xff000000
+        cdef uint32_t flag_shift = 24
+        return (input & flag_mask) >> flag_shift
+    
     def process_calls( self ):
         """Process all of our call files"""
         for call_file in self.call_files:
@@ -453,12 +547,10 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         cdef uint32_t current_function = 0 # the function currently being processed...
         cdef ThreadStack stack # current stack (thread)
         cdef FunctionInfo function_info # current function 
-        cdef FunctionCallInfo call_info # temp for function being called...
-        cdef FunctionCallInfo root_call
+        cdef CallInfo call_info # temp for function being called...
+        cdef CallInfo root_call
         
-        cdef uint32_t flag_mask = 0xff000000
         cdef uint32_t function_mask = 0x00ffffff
-        cdef uint32_t flag_shift = 24
         
         # incoming record information
         cdef uint16_t thread = 0
@@ -481,21 +573,13 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         cdef uint32_t highest_ts = 0
         
         for i in range( calls_data.record_count ):
-            thread = calls_data.records[i].thread
-            if self.swapendian:
-                thread = swap_16( thread )
-            function = calls_data.records[i].function
-            if self.swapendian:
-                function = swap_32( function )
-            flags = (function & flag_mask) >> flag_shift
-            function = function & function_mask
+            thread = self.swap_16( calls_data.records[i].thread )
+            timestamp = self.swap_32( calls_data.records[i].timestamp )
+            line = self.swap_16( calls_data.records[i].line )
             
-            timestamp = calls_data.records[i].timestamp
-            if self.swapendian:
-                timestamp = swap_32( timestamp )
-            line = calls_data.records[i].line
-            if self.swapendian:
-                line = swap_16( line )
+            function = self.swap_32( calls_data.records[i].function )
+            flags = self.extract_flags( function )
+            function = self.extract_function( function )
             
             if timestamp < lowest_ts:
                 lowest_ts = timestamp
@@ -513,11 +597,11 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                 current_thread = thread
             
             if flags == 1: # call...
-                stack.push( self.functions[function], timestamp )
+                stack.push( self.functions[function], timestamp, i )
             elif flags == 2: # return 
                 # TODO: suppress start-of-func lines, as they are not really 
                 # telling us anything about the individual lines...
-                stack.pop( timestamp )
+                stack.pop( timestamp, i )
             elif flags == 0: # line...
                 # we know current function exists, but there's no guarantee that the function 
                 # was called within the profile operation (it is know that there will be times 
@@ -534,6 +618,17 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         
         self.threads.update( stacks )
         calls_data.close()
+#    
+#    def call_tree( self, long index ):
+#        """Yield all of the calls for the given function"""
+#        cdef CallsFile calls_data = CallsFile( calls_filename )
+#        cdef uint32_t record_function
+#        cdef list result = []
+#        for i in range( index, calls_data.record_count ):
+#            record_function = self.extract_function( self.swap_32( calls_data.records[i].function ))
+#            if record_function == function:
+#                result.append( i )
+#        return result
 
     def parents_of( self, FunctionInfo child ):
         """Retrieve those functions who are parents of functioninfo"""
