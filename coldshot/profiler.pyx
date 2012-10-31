@@ -289,7 +289,7 @@ cdef class Profiler:
         if count_obj is None:
             count = len( self.files ) + 1
             self.files[filename] = count
-            self.index.write_file( count, filename )
+            self.index.write_file( count, os.path.abspath( filename ) )
         else:
             count = <long>count_obj
         return count
