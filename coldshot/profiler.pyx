@@ -1,8 +1,9 @@
 """Coldshot, a Hotshot-like profiler implementation in Cython
 """
 from cpython cimport PY_LONG_LONG
-import urllib, os, weakref, sys
+import urllib, os, weakref, sys, logging
 from coldshot cimport *
+log = logging.getLogger( __name__ )
 
 cdef extern from "frameobject.h":
     ctypedef int (*Py_tracefunc)(object self, PyFrameObject *py_frame, int what, object arg)
@@ -296,13 +297,14 @@ cdef class Profiler:
     cdef uint32_t func_to_number( self, PyFrameObject frame ):
         """Convert a function reference to a persistent function ID"""
         cdef PyCodeObject code = frame.f_code[0]
-        cdef tuple key 
+        cdef ssize_t key 
         cdef bytes name
         cdef bytes module 
         cdef uint32_t count
         cdef object count_obj
         cdef int fileno
-        key = (<object>code.co_filename,<int>code.co_firstlineno)
+        # Key is the "id" of the code...
+        key = <ssize_t>frame.f_code
         count_obj = self.functions.get( key )
         if count_obj is None:
             fileno = self.file_to_number( code )
@@ -310,6 +312,7 @@ cdef class Profiler:
                 module = (<object>frame.f_globals)['__name__']
             except KeyError as err:
                 module = <bytes>code.co_filename
+                log.warn( 'No __name__ in %s', module )
             name = <bytes>(code.co_name)
             count = <uint32_t>(len(self.functions)+1)
             self.functions[key] = count
