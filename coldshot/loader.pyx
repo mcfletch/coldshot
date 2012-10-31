@@ -61,7 +61,7 @@ cdef class FunctionCallInfo:
         self.last_line_time = start 
     cdef public uint32_t record_stop( self, uint32_t stop ):
         cdef uint32_t delta = stop - self.start 
-        self.function.record_call()
+        self.function.record_call(self.start)
         self.function.record_time_spent( delta )
         return delta
     cdef public uint32_t record_stop_child( self, uint32_t delta, uint32_t child ):
@@ -126,8 +126,14 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
         
         calls -- count of calls on the function 
         time -- cumulative time spent in the function
+        child_time -- cumulative time spent in children
         line_map -- line: FunctionLineInfo mapping for each line executed
-        child_map -- child_id: time for each called child...
+        child_map -- child_id: cumulative-time for each called child...
+        
+        first_timestamp -- timestamp of the first call to the function
+        last_timestamp -- timestamp of the last call to the function
+    
+    All times/timestamps are stored in the original profiler units.
     """
     cdef public short int key
     cdef public str module 
@@ -136,9 +142,11 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
     cdef public short int line
     
     cdef public long calls 
-    cdef public long recursive_calls # TODO
     cdef public long child_time
     cdef public long time
+    
+    cdef public long first_timestamp
+    cdef public long last_timestamp
     
     cdef public object line_map 
     cdef public object child_map
@@ -152,12 +160,14 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
         self.name = name 
         self.file = file
         self.line = line
-        self.calls = 0
-        self.child_time = 0
-        self.recursive_calls = 0
         
         self.line_map = {}
         self.child_map = {}
+        
+        self.calls = 0
+        self.child_time = 0
+        self.first_timestamp = 0
+        self.last_timestamp = 0
     # external data-API showing seconds 
     @property 
     def local( self ):
@@ -190,22 +200,6 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
     @property 
     def directory( self ):
         return self.file.directory 
-    
-    cdef record_call( self ):
-        """Increment our internal call counter"""
-        self.calls += 1
-    cdef record_time_spent( self, uint32_t delta ):
-        """Record total time spent in the function (cumtime)"""
-        self.time += delta 
-    cdef record_time_spent_child( self, uint32_t child, uint32_t delta ):
-        """Record time spent in a given child function"""
-        cdef long current
-        if child != self.key:
-            # we don't consider time in ourselves to be a child...
-            self.child_time += delta 
-        current = self.child_map.get( child, 0 )
-        self.child_map[child] = current + delta
-    
     @property
     def parents( self ):
         """Retrieve those functions which directly call me"""
@@ -225,25 +219,34 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
     def child_cumulative_time( self, other ):
         """Return cumulative time spent in other as a fraction of our cumulative time"""
         return self.child_map.get(other.key, 0)/float( self.time or 1 )
+
+        
+    # Internal APIs for Loader
+    cdef record_call( self, uint32_t timestamp ):
+        """Increment our internal call counter and first/last timestamp"""
+        self.calls += 1
+        if not self.first_timestamp:
+            self.first_timestamp = timestamp
+        self.last_timestamp = timestamp
+    cdef record_time_spent( self, uint32_t delta ):
+        """Record total time spent in the function (cumtime)"""
+        self.time += delta 
+    cdef record_time_spent_child( self, uint32_t child, uint32_t delta ):
+        """Record time spent in a given child function"""
+        cdef long current
+        if child != self.key:
+            # we don't consider time in ourselves to be a child...
+            self.child_time += delta 
+        current = self.child_map.get( child, 0 )
+        self.child_map[child] = current + delta
     
-    def __unicode__( self ):
-        seconds = self.time
-        local = (self.time-self.child_time)
-        return u'%s % 5i % 5.4fs % 5.4fs % 5.4ss % 5.4s'%(
-            self.name.ljust(30),
-            self.calls,
-            seconds,
-            seconds/float(self.calls or 1),
-            local,
-            local/float(self.calls or 1),
-        )
     def __repr__( self ):
         return '<%s %s:%s %s:%ss>'%(
             self.__class__.__name__,
             self.module,
             self.name,
             self.calls,
-            self.time,
+            self.cumulative,
         )
 
 cdef class ThreadStack:

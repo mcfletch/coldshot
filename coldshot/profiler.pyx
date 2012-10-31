@@ -228,10 +228,9 @@ cdef class Profiler:
     
     >>> import coldshot
     >>> p = coldshot.Profiler( 'test.profile' )
-    >>> p.filename
-    'test.profile'
-    >>> p.index_filename
-    'test.profile.index'
+    >>> p.start()
+    ...
+    >>> p.stop()
     """
     cdef public dict files
     cdef public dict functions
