@@ -418,12 +418,12 @@ cdef class Profiler:
         #delta = delta & 0xffffffff
         return <uint32_t>delta
     
-#    def __enter__( self ):
-#        """Start the profiler on entry"""
-#        self.start()
-#    def __exit__( self, type, value, traceback ):
-#        """Stop the profiler on exit"""
-#        self.stop()
+    def __enter__( self ):
+        """Start the Profiler on entry"""
+        self.start()
+    def __exit__( self, type, value, traceback ):
+        """Stop the Profiler on exit"""
+        self.stop()
     
     # External api
     def start( self ):
@@ -444,8 +444,18 @@ cdef class Profiler:
         coldshot_unset_profile()
         if self.lines:
             coldshot_unset_trace()
+        self.flush()
+    
+    def flush( self ):
+        """Flush our results to disk"""
         self.index.flush()
         self.calls.flush()
+    
+    def close( self ):
+        """Close our files"""
+        self.flush()
+        self.index.close()
+        self.calls.close()
 
 cdef bytes module_name( PyCFunctionObject func ):
     cdef object local_mod
