@@ -62,7 +62,9 @@ class TestLoader( TestLoaderBase ):
 
 class TestLoaderIndividual( TestLoaderBase ):
     def create_loader( self ):
-        load = loader.Loader( self.test_dir, individual_calls=True )
+        load = loader.Loader( self.test_dir, individual_calls=set([  
+            ('tests.test_loader','first_level') 
+        ]))
         load.load()
         return load
 
@@ -75,7 +77,10 @@ class TestLoaderIndividual( TestLoaderBase ):
         assert len(children) == 2, children
         for child in children:
             assert len(child.children) == 2 # second level
+            assert 0.003 > child.cumulative > .002, child.cumulative # should take slightly longer than 0.002
+            assert 0.001 > child.local > 0.000001, child.local # should be an extremely small slice
             for grandchild in child.children:
                 assert len(grandchild.children) == 1 # third level
+                assert 0.002 > grandchild.cumulative > 0.001, grandchild.cumulative
                 for greatgrandchild in grandchild.children:
                     assert len(greatgrandchild.children) == 0 # time.sleep

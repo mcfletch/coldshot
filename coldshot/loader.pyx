@@ -72,8 +72,6 @@ cdef class CallInfo:
         self.last_line_time = start 
         self.start_index = start_index
         self.stop_index = start_index
-        if function.loader.individual_calls:
-            function.individual_calls.append( self )
     cdef public uint32_t record_stop( self, uint32_t stop, long stop_index ):
         cdef uint32_t delta = stop - self.start 
         self.stop = stop
@@ -98,6 +96,26 @@ cdef class CallInfo:
     def cumulative( self ):
         return (self.stop - self.start) * self.function.loader.timer_unit
     @property 
+    def filename( self ):
+        return self.function.filename
+    @property 
+    def lineno( self ):
+        return self.function.lineno 
+    @property 
+    def local( self ):
+        # TODO: needs cache
+        cdef uint32_t result = 0
+        cdef CallInfo child 
+        cdef uint32_t last_ts = self.start
+        for child in self.children:
+            result += child.start - last_ts 
+            last_ts = child.stop 
+        result += self.stop - last_ts 
+        return result * self.function.loader.timer_unit
+    @property 
+    def empty( self ):
+        return self.local / self.cumulative
+    @property 
     def children( self ):
         """Children of a particular call 
         
@@ -114,6 +132,7 @@ cdef class CallInfo:
         anything that is within that call which falls within our set, and do 
         that for each of the top-level calls found...
         """
+        # TODO: needs cache
         cdef FunctionInfo other_func
         cdef CallInfo call_info
         cdef list possible
@@ -335,6 +354,7 @@ cdef class ThreadStack:
     cdef uint32_t start 
     cdef uint32_t stop
     cdef Loader loader
+    cdef uint16_t individual_calls
     def __cinit__( self, uint16_t thread, FunctionInfo root, uint32_t timestamp, Loader loader ):
         self.thread = thread
         self.context_switches = 0
@@ -355,6 +375,10 @@ cdef class ThreadStack:
         """Push a new record onto the function stack"""
         call_info = CallInfo( function_info, timestamp, index, self.thread )
         self.function_stack.append( call_info )
+        if function_info.key in function_info.loader.individual_calls:
+            self.individual_calls += 1
+        if self.individual_calls:
+            function_info.individual_calls.append( call_info )
     cdef pop( self, uint32_t timestamp, long index ):
         """Pop a single record from the stack at given timestamp"""
         cdef CallInfo call_info 
@@ -365,6 +389,9 @@ cdef class ThreadStack:
         current_function = call_info.function.key 
         child_delta = call_info.record_stop( timestamp, index )
         self.stop = timestamp
+
+        if current_function in call_info.function.loader.individual_calls:
+            self.individual_calls -= 1
         
         del self.function_stack[-1]
         if self.function_stack:
@@ -420,7 +447,6 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
     
     cdef public bint bigendian
     cdef public bint swapendian
-    cdef public bint individual_calls
     cdef public int version 
     cdef public double timer_unit
     
@@ -430,13 +456,15 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
     cdef public dict function_names
     cdef public dict threads
     
+    # function IDs for which individual call records should be retained...
+    cdef public set individual_calls
     
     cdef public FunctionInfo root
     
-    def __cinit__( self, directory, individual_calls=False ):
+    def __cinit__( self, directory, individual_calls=None ):
         self.directory = directory
         self.index_filename = os.path.join( directory, profiler.Profiler.INDEX_FILENAME )
-        self.individual_calls = individual_calls
+        self.individual_calls = individual_calls or set()
         
         self.call_files = []
         self.line_files = []
@@ -512,7 +540,21 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                     self.call_files.append( line[2] )
                 else:
                     log.error( "Unrecognized data-file type: %s %s", line[1], line[2] )
-    
+        self.individual_calls = self.convert_individual_calls()
+    def convert_individual_calls( self ):
+        # Now need to convert anything which is name-based into ID-based references 
+        result = set()
+        for key in self.individual_calls:
+            if isinstance( key, tuple):
+                function = self.function_names.get( key )
+                if function is not None:
+                    result.add( function.key )
+                else:
+                    log.warn( 'No function with key %s found', key )
+            else:
+                # query by ID, likely from a GUI with such access...
+                result.add( key )
+        return result 
     cdef uint16_t swap_16( self, uint16_t input ):
         if self.swapendian:
             return swap_16( input )
@@ -641,4 +683,39 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
     def rows( self ):
         """Produce the set of all rows"""
         return self.functions.values()
+    
+    def individual_root( self ):
+        """Create a root for all of our individually-tracked call roots..."""
+        # TODO: cache
+        roots = []
+        for key in self.individual_calls:
+            root = self.functions.get( key )
+            if root is not None:
+                roots.append( root )
+        return IndividualRoot( roots, self )
+    def individual_rows( self ):
+        """Get all individual call records"""
+        result = []
+        for function in self.functions.itervalues():
+            if function.individual_calls:
+                result.extend( function.individual_calls )
+        return result
+    
+class IndividualRoot:
+    """Used to glue together otherwise un-related root objects"""
+    def __init__( self, roots, loader ):
+        """Create a root that spans a set of roots"""
+        self.cumulative = sum([r.cumulative for r in roots])
+        self.local = 0.0
+        self.empty = 0.0
+        self.localPer = 0.0
+        self.calls = 1
+        self.cumulativePer = self.cumulative
+        self.children = sorted( roots, key=lambda x: x.cumulative )
+        self.parents = []
+        self.lineno = 0
+        self.filename = '*'
+        self.name = '*'
+        self.path = '*'
+        self.loader = loader 
     
