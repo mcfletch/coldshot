@@ -199,6 +199,9 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
     @property 
     def directory( self ):
         return self.file.directory 
+    @property 
+    def path( self ):
+        return self.file.path
     @property
     def parents( self ):
         """Retrieve those functions which directly call me"""
