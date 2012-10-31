@@ -171,26 +171,25 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
     # external data-API showing seconds 
     @property 
     def local( self ):
-        return (self.time - self.child_time) * self.loader.timer_unit
+        if self.time >= self.child_time:
+            return (self.time - self.child_time) * self.loader.timer_unit
+        else:
+            return 0.0
     @property 
     def empty( self ):
         """Calculate local time as a fraction of total time"""
-        return (self.time - self.child_time)/float( self.time )
+        if self.time >= self.child_time:
+            return (self.time - self.child_time)/float( self.time )
+        return 0.0
     @property 
     def cumulative( self ):
         return self.time * self.loader.timer_unit
     @property 
     def localPer( self ):
-        return (
-            (self.time - self.child_time) * self.loader.timer_unit /
-            (self.calls or 1)
-        )
+        return self.local / ( self.calls or 1 )
     @property 
     def cumulativePer( self ):
-        return (
-            (self.time * self.loader.timer_unit) / 
-            (self.calls or 1)
-        )
+        return self.cumulative / (self.calls or 1 )
     @property 
     def lineno( self ):
         return self.line 
@@ -288,10 +287,10 @@ cdef class ThreadStack:
             call_info = self.function_stack[-1]
             # child is current_function...
             call_info.record_stop_child( child_delta, current_function )
-    cdef pop_all( self, timestamp ):
+    cdef pop_all( self ):
         """Pop all non-root records"""
         while len(self.function_stack):
-            self.pop( timestamp )
+            self.pop( self.stop )
     cdef push( self, function_info, timestamp ):
         """Push a new record onto the function stack"""
         call_info = FunctionCallInfo( function_info, timestamp )
@@ -352,6 +351,7 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
     cdef public dict file_names
     cdef public dict functions 
     cdef public dict function_names
+    cdef public dict threads
     
     cdef public FunctionInfo root
     
@@ -364,6 +364,7 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         self.file_names = {}
         self.functions = {}
         self.function_names = {}
+        self.threads = {}
         self.file_names['__builtin__'] = self.files[0] = FileInfo( '__builtin__', 0 )
         self.bigendian = False 
         self.swapendian = False
@@ -375,6 +376,8 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
             0,
             self
         )
+        self.functions[ self.root.key ] = self.root 
+        self.function_names[ (self.root.module, self.root.name) ] = self.root
 
     def load( self ):
         """Scan our data-files for basic index information"""
@@ -471,6 +474,9 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         
         current_thread = 0
         
+        cdef uint32_t lowest_ts = 0xffffffff
+        cdef uint32_t highest_ts = 0
+        
         for i in range( calls_data.record_count ):
             thread = calls_data.records[i].thread
             if self.swapendian:
@@ -488,6 +494,11 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
             if self.swapendian:
                 line = swap_16( line )
             
+            if timestamp < lowest_ts:
+                lowest_ts = timestamp
+            if timestamp > highest_ts:
+                highest_ts = timestamp
+                
             if thread != current_thread:
                 # we are following a thread context switch, 
                 # we should *likely* track that somewhere...
@@ -498,15 +509,8 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                     stack.record_context_switch(timestamp)
                 current_thread = thread
             
-            if function != current_function or function_info is None:
-                # we have switched functions, need to get the new function's record...
-                function_info = <FunctionInfo>self.functions[function]
-                current_function = function
-                if self.root is None:
-                    self.root = function_info
-                
             if flags == 1: # call...
-                stack.push( function_info, timestamp )
+                stack.push( self.functions[function], timestamp )
             elif flags == 2: # return 
                 # TODO: suppress start-of-func lines, as they are not really 
                 # telling us anything about the individual lines...
@@ -517,8 +521,15 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                 # it was not, in fact), so we need to pull a line-specific stack for this...
                 call_info = stack.function_stack[-1]
                 call_info.record_line( line, timestamp, 0 )
-        for stack in stacks.values():
-            stack.pop_all(timestamp)
+                # TODO this is *very* wrong, as the line event can jump around files with 
+                # imports and the like...
+        # root needs to finalize...
+        self.root.last_timestamp = highest_ts
+        self.root.first_timestamp = lowest_ts 
+        self.root.record_call( highest_ts )
+        self.root.record_time_spent( highest_ts - lowest_ts )
+        
+        self.threads.update( stacks )
         calls_data.close()
 
     def parents_of( self, FunctionInfo child ):
