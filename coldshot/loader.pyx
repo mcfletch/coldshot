@@ -2,6 +2,7 @@
 import os, urllib, sys, mmap, logging
 from . import profiler
 from coldshot cimport *
+from callsfile cimport *
 log = logging.getLogger( __name__ )
 
 __all__ = ("Loader",)
@@ -42,47 +43,6 @@ cdef class Row:
         """Average cumulative time in seconds per call"""
         return self.cumulative / (self.calls or 1 )
 
-cdef class MappedFile:
-    """Memory-mapped file used for scanning large data-files"""
-    cdef object filename 
-    cdef long filesize
-    cdef object fh 
-    cdef object mm
-    cdef public long record_count
-    def __cinit__( self, filename ):
-        self.filename = filename
-        self.fh = open( filename, 'rb' )
-        self.filesize = os.stat( filename ).st_size 
-        self.mm = mmap.mmap( self.fh.fileno(), self.filesize, prot=mmap.PROT_READ )
-        self.get_pointer( self.mm )
-    def close( self ):
-        self.mm.close()
-        self.fh.close()
-    
-cdef class CallsFile(MappedFile):
-    """Particular mapped file which loads our callsfile data-structures"""
-    cdef event_info * records 
-    def get_pointer( self, mm ):
-        cdef mmap_object * c_level
-        c_level = <mmap_object *>mm
-        self.records = <event_info *>(c_level[0].data)
-        self.record_count = self.filesize // sizeof( event_info )
-    def __iter__( self ):
-        return CallsIterator( self )
-        
-cdef class CallsIterator:
-    """Provide python-level iteration over a CallsFile"""
-    cdef CallsFile records
-    cdef long position
-    def __cinit__( self, records ):
-        self.records = records 
-        self.position = 0
-    def __next__( self ):
-        if self.position < self.records.record_count:
-            result = <object>(self.records.records[self.position])
-            self.position += 1
-            return result 
-        raise StopIteration( self.position )
         
 cdef class CallInfo:
     """Tracks information related to a single Stack Frame
@@ -730,43 +690,18 @@ class IndividualRoot:
 
 cdef class Group(Row):
     """Group of N profile-viewable things that are lumped together"""
-    cdef public dict children 
-    def __init__( self, list children, Loader loader ):
+    cdef public str name 
+    cdef public list children 
+    def __init__( self, name, children, Loader loader ):
         Row.__init__( self, loader )
-        self.children = {}
-        for child in children:
+        self.name = name 
+        self.children = children or []
+        for child in self.children:
             self.add_child( child )
     cdef Row add_child( self, Row child ):
-        current = self.children.get( child.key )
-        if current is None:
-            self.children[child.key] = [child]
-        else:
-            current.append( child )
-        self.child_time += child.time 
+        self.children.append( child )
         return child 
-cdef class Call(Row):
-    """Represents a single row..."""
-    cdef uint32_t key
-    cdef uint32_t start
-    cdef uint32_t stop 
-    def __init__( self, uint32_t start, uint32_t stop, uint32_t key, Loader loader ):
-        Row.__init__( self, loader )
-        self.start = start 
-        self.stop = stop 
-        self.key = key 
-        self.time = stop - start 
-    @property 
-    def function( self ):
-        return self.loader.functions.get( self.key )
-    def CallGroup __add__( self, other ):
-        if isinstance( other, Call ):
-            return CallGroup( self.key, [self,other], self.loader )
-        elif isinstance( other, CallGroup ):
-            other.add_child( self )
-            return other 
-        else:
-            raise RuntimeError( "Don't know how to add Call to %s"%( other.__class__.__name__ ))
-    
+        
 cdef class CallGroup(Group):
     """Set of calls which are grouped together
     
@@ -781,41 +716,4 @@ cdef class CallGroup(Group):
     below this level...
     
     Could do it based on time too?
-    
-    loader 
-        Call (root)
-            children 
-                Call/CallGroup 
-                    children 
-        
-    When adding a child to a group, if the group's children are > than 
-        2**8, then compress each set of two children by adding their stats
-        and merging their children-dicts...
-            children is ID: Call/CallGroup 
-                for each ID in the set, if there is a corresponding ID in the 
-                other set, then the result is the ID: (A+B) otherwise result is 
-                just A for each ID left in B, result is B
-                
     """
-    cdef uint32_t key 
-    def __init__( self, uint32_t key, list children, Loader loader ):
-        Group.__init__( children, loader )
-        self.key = key 
-    def __add__( self, other ):
-        if isinstance( other, Call ):
-            self.add_child( other )
-            return self 
-        elif isinstance( other, CallGroup ):
-            self.time += other.time 
-            self.calls += other.calls 
-            self.child_time += other.child_time 
-            for child in other.children.values():
-                current = self.children.get( child.key )
-                if current is None:
-                    self.children[child.key] = child 
-                else:
-                    self.children[child.key] = child + current 
-            return self 
-        else:
-            raise RuntimeError( """Don't know how to add CallGroup to %s instances"""%( other.__class__.__name__ ))
-    

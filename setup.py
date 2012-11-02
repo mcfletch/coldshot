@@ -34,6 +34,17 @@ extensions = [
         depends=['python.pxd']
     ),
     Extension(
+        "coldshot.callsfile",
+        [
+            [
+                os.path.join( 'coldshot','callsfile.c' ),
+                os.path.join('coldshot','callsfile.pyx')
+            ][bool( have_cython )],
+        ],
+        include = ['coldshot'],
+        depends=['python.pxd']
+    ),
+    Extension(
         "coldshot.loader",
         [
             [
@@ -41,7 +52,7 @@ extensions = [
                 os.path.join('coldshot','loader.pyx')
             ][bool( have_cython )],
         ],
-        include = ['coldshot'],
+        include = ['coldshot','callsfile'],
         depends=['python.pxd']
     ),
 ]
