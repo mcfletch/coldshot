@@ -65,7 +65,7 @@ cdef extern from 'lowlevel.h':
     void coldshot_unset_trace()
     void coldshot_unset_profile()
 
-CALL_INFO_SIZE = sizeof( call_info )
+CALL_INFO_SIZE = sizeof( event_info )
 TIMER_UNIT = hpTimerUnit()
     
 __all__ = [
@@ -128,7 +128,7 @@ cdef class DataWriter:
         uint16_t line, 
         uint32_t flags,
     ):
-        """Write our call_info record
+        """Write our event_info record
         
             uint16_t thread 
             uint16_t line
@@ -137,7 +137,7 @@ cdef class DataWriter:
         
         returns number of records written (should always be 1)
         """
-        cdef call_info local 
+        cdef event_info local 
         cdef ssize_t written
         cdef uint32_t flag_mask = 0xff000000
         local.thread = thread 
@@ -146,7 +146,7 @@ cdef class DataWriter:
         local.function = function | flags
         local.line = line 
         local.timestamp = timestamp
-        written = self.write_void( &local, sizeof( call_info ))
+        written = self.write_void( &local, sizeof( event_info ))
         return written
 
 cdef class IndexWriter(object):

@@ -6,6 +6,42 @@ log = logging.getLogger( __name__ )
 
 __all__ = ("Loader",)
 
+cdef class Row:
+    """Base class for all profile-row types"""
+    cdef public long calls 
+    cdef public long time
+    cdef public long child_time
+    cdef public Loader loader 
+    def __init__( self, Loader loader ):
+        self.loader = loader
+        self.time = 0
+        self.calls = 0
+        self.child_time = 0
+    @property 
+    def local( self ):
+        if self.time >= self.child_time:
+            return (self.time - self.child_time) * self.loader.timer_unit
+        else:
+            return 0.0
+    @property 
+    def empty( self ):
+        """Calculate local time as a fraction of total time"""
+        if self.time >= self.child_time:
+            return (self.time - self.child_time)/float( self.time )
+        return 0.0
+    @property 
+    def cumulative( self ):
+        """Cumulative time in seconds"""
+        return self.time * self.loader.timer_unit
+    @property 
+    def localPer( self ):
+        """Average local time in seconds per call"""
+        return self.local / ( self.calls or 1 )
+    @property 
+    def cumulativePer( self ):
+        """Average cumulative time in seconds per call"""
+        return self.cumulative / (self.calls or 1 )
+
 cdef class MappedFile:
     """Memory-mapped file used for scanning large data-files"""
     cdef object filename 
@@ -25,12 +61,12 @@ cdef class MappedFile:
     
 cdef class CallsFile(MappedFile):
     """Particular mapped file which loads our callsfile data-structures"""
-    cdef call_info * records 
+    cdef event_info * records 
     def get_pointer( self, mm ):
         cdef mmap_object * c_level
         c_level = <mmap_object *>mm
-        self.records = <call_info *>(c_level[0].data)
-        self.record_count = self.filesize // sizeof( call_info )
+        self.records = <event_info *>(c_level[0].data)
+        self.record_count = self.filesize // sizeof( event_info )
     def __iter__( self ):
         return CallsIterator( self )
         
@@ -47,7 +83,7 @@ cdef class CallsIterator:
             self.position += 1
             return result 
         raise StopIteration( self.position )
-    
+        
 cdef class CallInfo:
     """Tracks information related to a single Stack Frame
     
@@ -60,11 +96,12 @@ cdef class CallInfo:
     cdef uint16_t thread
     cdef uint32_t start 
     cdef uint32_t stop
-    cdef uint16_t last_line 
-    cdef uint32_t last_line_time
     cdef long start_index
     cdef long stop_index
-    def __cinit__( self, FunctionInfo function, uint32_t start, long start_index, uint16_t thread ):
+    
+    cdef uint16_t last_line 
+    cdef uint32_t last_line_time
+    def __init__( self, FunctionInfo function, uint32_t start, long start_index, uint16_t thread ):
         self.function = function 
         self.thread = thread
         self.start = start 
@@ -164,7 +201,6 @@ cdef class CallInfo:
         else:
             result = possible
         return result
-        
     
     def __repr__( self ):
         return '<%s records[%s:%s] duration=%ss>'%(
@@ -199,15 +235,15 @@ cdef public class FileInfo [object Coldshot_FileInfo, type Coldshot_FileInfo_Typ
     cdef public object directory
     cdef public object path 
     cdef uint16_t fileno 
-    def __cinit__( self, path, fileno ):
+    def __init__( self, path, fileno ):
         self.path = path
         self.directory, self.filename = os.path.split( path )
         self.fileno = fileno 
     def __unicode__( self ):
         return '<%s for %s>'%( self.__class__.__name__, self.filename )
     __repr__ = __unicode__
-        
-cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_FunctionInfo_Type]:
+
+cdef class FunctionInfo(Row):
     """Represents call/trace information for a single function
     
     Attributes of note:
@@ -236,22 +272,17 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
     cdef public FileInfo file
     cdef public uint16_t line
     
-    cdef public long calls 
-    cdef public long child_time
-    cdef public long time
-    
     cdef public long first_timestamp
     cdef public long last_timestamp
     
     cdef public dict line_map 
     cdef public dict child_map
     cdef public list individual_calls
-    cdef public Loader loader
     
-    def __cinit__( self, uint32_t key, str module, str name, FileInfo file, uint16_t line, object loader ):
+    def __init__( self, uint32_t key, str module, str name, FileInfo file, uint16_t line, object loader ):
         """Initialize the FunctionInfo instance"""
+        Row.__init__( self, loader )
         self.key = key
-        self.loader = loader
         self.module = module 
         self.name = name 
         self.file = file
@@ -261,32 +292,9 @@ cdef public class FunctionInfo [object Coldshot_FunctionInfo, type Coldshot_Func
         self.child_map = {}
         self.individual_calls = []
         
-        self.calls = 0
-        self.child_time = 0
         self.first_timestamp = 0
         self.last_timestamp = 0
     # external data-API showing seconds 
-    @property 
-    def local( self ):
-        if self.time >= self.child_time:
-            return (self.time - self.child_time) * self.loader.timer_unit
-        else:
-            return 0.0
-    @property 
-    def empty( self ):
-        """Calculate local time as a fraction of total time"""
-        if self.time >= self.child_time:
-            return (self.time - self.child_time)/float( self.time )
-        return 0.0
-    @property 
-    def cumulative( self ):
-        return self.time * self.loader.timer_unit
-    @property 
-    def localPer( self ):
-        return self.local / ( self.calls or 1 )
-    @property 
-    def cumulativePer( self ):
-        return self.cumulative / (self.calls or 1 )
     @property 
     def lineno( self ):
         return self.line 
@@ -695,7 +703,8 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         return IndividualRoot( roots, self )
     def individual_rows( self ):
         """Get all individual call records"""
-        result = []
+        cdef FunctionInfo function
+        cdef list result = []
         for function in self.functions.itervalues():
             if function.individual_calls:
                 result.extend( function.individual_calls )
@@ -718,4 +727,33 @@ class IndividualRoot:
         self.name = '*'
         self.path = '*'
         self.loader = loader 
+
+cdef class Group(Row):
+    """Group of N profile-viewable things that are lumped together"""
+    cdef public str name 
+    cdef public list children 
+    def __init__( self, name, children, Loader loader ):
+        Row.__init__( self, loader )
+        self.name = name 
+        self.children = children or []
+        for child in self.children:
+            self.add_child( child )
+    cdef Row add_child( self, Row child ):
+        self.children.append( child )
+        return child 
+        
+cdef class CallGroup(Group):
+    """Set of calls which are grouped together
     
+    When we get to N individual calls, we lump the calls together such that 
+    we see the calls as one object, with the metadata for the calls no longer 
+    recorded by children (i.e. we track functions, as in a regular load).
+    Each child of the CallGroup is a series of FunctionInfo records which are 
+    *specific* to the calls within the call group.
+    
+    We record all of the individual calls *at this level* so that we can let 
+    the user query for more limited data-sets, but we suppress individual calls 
+    below this level...
+    
+    Could do it based on time too?
+    """

@@ -15,8 +15,9 @@ cdef extern from "minimalmmap.h":
 
 # NOTE: These structures *must* use natural alignment, or everything will 
 # go all to heck in a hand-basket!
-cdef struct call_info:
+cdef struct event_info:
     uint16_t thread
     uint16_t line
     uint32_t function # high byte is flags...
     uint32_t timestamp
+
