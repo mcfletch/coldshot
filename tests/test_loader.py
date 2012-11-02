@@ -40,24 +40,25 @@ class TestLoaderBase( TestCase ):
 class TestLoader( TestLoaderBase ):
         
     def test_cumulative( self ):
-        cumulative = self.loader.root.cumulative
-        local = self.loader.root.local
-        assert cumulative, self.loader.root.time
-        assert local, self.loader.root.local
+        root = self.loader.info.roots['calls']
+        cumulative = root.cumulative
+        local = root.local
+        assert cumulative, root.time
+        assert local, root.local
         assert abs( cumulative - 0.004 ) < .001, ("Expect a little more accuracy from time and profiler", cumulative)
         assert local < .001, "Expect less than 1ms for calling two functions"
     
     def test_has_functions( self ):
         for key in [self.first_key, self.second_key, self.third_key]:
-            assert key in self.loader.function_names
+            assert key in self.loader.info.function_names
     
     def test_parents( self ):
-        func = self.loader.function_names[ self.recurse_key ]
+        func = self.loader.info.function_names[ self.recurse_key ]
         parents = func.parents 
         assert func in parents, parents
 
     def test_root_children( self ):
-        root = self.loader.function_names[ ('*','*') ]
+        root = self.loader.info.function_names[ ('*','*') ]
         assert len( root.children ) == 2, root.children
 
 class TestLoaderIndividual( TestLoaderBase ):
@@ -70,7 +71,7 @@ class TestLoaderIndividual( TestLoaderBase ):
 
     def test_individual_calls( self ):
         """Individual call information on functions"""
-        func = self.loader.function_names[ self.first_key ]
+        func = self.loader.info.function_names[ self.first_key ]
         assert len(func.individual_calls) == 1, func.individual_calls
         first_level = func.individual_calls[0]
         children = first_level.children

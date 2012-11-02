@@ -15,7 +15,7 @@ class Reporter( object ):
             return result 
         self.sort = key 
     def report( self ):
-        functions = self.loader.functions.values()
+        functions = self.loader.info.functions.values()
         functions.sort( key=self.sort )
         COLSET = ['module','name','time','calls','local']
         header = '%s %s %s %s %s'%('Namespace'.rjust(30),'Name'.ljust(20),'Cumtime'.ljust(12),'Calls'.ljust(9),'Local'.ljust(9))

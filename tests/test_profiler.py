@@ -36,16 +36,16 @@ class TestProfiler( TestCase ):
         self.profiler.stop()
         load = loader.Loader( self.test_dir )
         load.load()
-        assert load.files
+        assert load.info.files
         
-        this_file = load.files[1]
+        this_file = load.info.files[1]
         
-        assert load.functions 
-        for funcno, funcinfo in load.functions.items():
+        assert load.info.functions 
+        for funcno, funcinfo in load.info.functions.items():
             assert funcinfo.name 
         this_key = ('tests.test_profiler','blah')
-        assert this_key in load.function_names, load.function_names.keys()
-        blah_func = load.function_names[this_key]
+        assert this_key in load.info.function_names, load.info.function_names.keys()
+        blah_func = load.info.function_names[this_key]
         assert blah_func.calls == 1
         assert blah_func.time
 
@@ -62,10 +62,10 @@ class TestProfiler( TestCase ):
         
         load = loader.Loader( self.test_dir )
         load.load()
-        assert load.functions 
-        assert ('__builtin__','range') in load.function_names, load.function_names.keys()
-        assert ('__builtin__.list','append') in load.function_names, load.function_names.keys()
-        list_append = load.function_names[('__builtin__.list','append')]
+        assert load.info.functions 
+        assert ('__builtin__','range') in load.info.function_names, load.info.function_names.keys()
+        assert ('__builtin__.list','append') in load.info.function_names, load.info.function_names.keys()
+        list_append = load.info.function_names[('__builtin__.list','append')]
         assert list_append.calls == 400, list_append.calls
     
     def test_line_timings_vs_calls( self ):
@@ -77,7 +77,7 @@ class TestProfiler( TestCase ):
         load = loader.Loader( self.test_dir )
         load.load()
         for name in ['slow_lines','slow_calls']:
-            slow_func = load.function_names['tests.test_profiler',name]
+            slow_func = load.info.function_names['tests.test_profiler',name]
             assert len(slow_func.line_map) == 4, slow_func.line_map # start + 3 internal lines
             sorted_lines = [x[1] for x in sorted( slow_func.line_map.items())][1:]
             multiplier = 1000000
@@ -98,11 +98,11 @@ class TestProfiler( TestCase ):
         
         load = loader.Loader( self.test_dir )
         load.process_index( load.index_filename )
-        load.swapendian = True 
+        load.info.swapendian = True 
         self.assertRaises( KeyError, load.process_calls )
         
         this_key = ('tests.test_profiler','test_load_byteswapped')
-        assert this_key in load.function_names 
+        assert this_key in load.info.function_names 
     
     def test_byteswap( self ):
         assert eventsfile.byteswap_16( 0xff00 ) == 0xff,  eventsfile.byteswap_16( 0xff00 )
@@ -118,5 +118,5 @@ class TestProfiler( TestCase ):
         load = loader.Loader( self.test_dir )
         load.load()
         this_key = ('tests.test_profiler','test_enter_exit')
-        assert this_key in load.function_names, load.function_names
+        assert this_key in load.info.function_names, load.info.function_names
     

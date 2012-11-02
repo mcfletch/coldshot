@@ -1,4 +1,8 @@
-"""Load/map/iterate over a data-file on disk"""
+"""Load/map/iterate over a data-file on disk
+
+Provides the mechanisms required to get a pointer into a set of structures 
+stored on disk which describe the events observed by the Profiler.
+"""
 import os, mmap, logging
 from coldshot cimport event_info, mmap_object, uint16_t, uint32_t
 log = logging.getLogger( __name__ )

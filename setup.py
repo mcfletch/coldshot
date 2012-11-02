@@ -31,7 +31,7 @@ extensions = [
             os.path.join( 'coldshot', 'timers.c' ),
         ],
         include = ['coldshot'],
-        depends=['python.pxd']
+        depends=['python.pxd','coldshot.pxd']
     ),
     Extension(
         "coldshot.eventsfile",
@@ -39,6 +39,17 @@ extensions = [
             [
                 os.path.join( 'coldshot','eventsfile.c' ),
                 os.path.join('coldshot','eventsfile.pyx')
+            ][bool( have_cython )],
+        ],
+        include = ['coldshot'],
+        depends=['python.pxd','coldshot.pxd']
+    ),
+    Extension(
+        "coldshot.stack",
+        [
+            [
+                os.path.join( 'coldshot','stack.c' ),
+                os.path.join('coldshot','stack.pyx')
             ][bool( have_cython )],
         ],
         include = ['coldshot'],
@@ -52,7 +63,7 @@ extensions = [
                 os.path.join('coldshot','loader.pyx')
             ][bool( have_cython )],
         ],
-        include = ['coldshot','eventsfile'],
+        include = ['coldshot','eventsfile','stack'],
         depends=['python.pxd']
     ),
 ]
