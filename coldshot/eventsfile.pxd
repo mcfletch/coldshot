@@ -1,5 +1,5 @@
 """Load/map/iterate over a data-file on disk"""
-from coldshot cimport event_info, mmap_object
+from coldshot cimport event_info, mmap_object, uint16_t, uint32_t
 
 cdef class MappedFile:
     cdef object filename 
@@ -14,3 +14,6 @@ cdef class EventsFile(MappedFile):
 cdef class CallsIterator:
     cdef EventsFile records
     cdef long position
+
+cdef uint16_t swap_16( uint16_t input )
+cdef uint32_t swap_32( uint32_t input )

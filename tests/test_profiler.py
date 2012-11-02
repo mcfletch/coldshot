@@ -1,5 +1,5 @@
 from unittest import TestCase
-from coldshot import profiler, loader 
+from coldshot import profiler, loader, eventsfile
 import tempfile, os, shutil, time
 
 def blah():
@@ -105,9 +105,9 @@ class TestProfiler( TestCase ):
         assert this_key in load.function_names 
     
     def test_byteswap( self ):
-        assert loader.byteswap_16( 0xff00 ) == 0xff,  loader.byteswap_16( 0xff00 )
-        assert loader.byteswap_16( 0x00ff ) == 0xff00, loader.byteswap_16( 0x00ff )
-        assert loader.byteswap_32( 0x89abcdef ) == 0xefcdab89, hex(loader.byteswap_32( 0x89abcdef ))
+        assert eventsfile.byteswap_16( 0xff00 ) == 0xff,  eventsfile.byteswap_16( 0xff00 )
+        assert eventsfile.byteswap_16( 0x00ff ) == 0xff00, eventsfile.byteswap_16( 0x00ff )
+        assert eventsfile.byteswap_32( 0x89abcdef ) == 0xefcdab89, hex(eventsfile.byteswap_32( 0x89abcdef ))
         
     def test_enter_exit( self ):
         with self.profiler:

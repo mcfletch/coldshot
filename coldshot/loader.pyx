@@ -43,7 +43,6 @@ cdef class Row:
         """Average cumulative time in seconds per call"""
         return self.cumulative / (self.calls or 1 )
 
-        
 cdef class CallInfo:
     """Tracks information related to a single Stack Frame
     
@@ -366,36 +365,6 @@ cdef class ThreadStack:
             call_info = self.function_stack[-1]
             # child is current_function...
             call_info.record_stop_child( child_delta, current_function )
-    
-def byteswap_16( input ):
-    return swap_16( input )
-def byteswap_32( input ):
-    return swap_32( input )
-        
-cdef uint16_t swap_16( uint16_t input ):
-    """Byte-swap a 16-bit integer"""
-    cdef uint16_t output 
-    cdef uint16_t low_mask = 0x00ff 
-    cdef uint16_t high_mask = 0xff00
-    cdef uint16_t shift = 8
-    output = ((input & low_mask) << shift) | ((input & high_mask) >> shift)
-    return output
-cdef uint32_t swap_32( uint32_t input ):
-    """Byte-swap a 32-bit integer"""
-    cdef uint32_t output 
-    cdef uint32_t low_mask = 0x000000ff 
-    cdef uint32_t low_mid_mask = 0x0000ff00
-    cdef uint32_t high_mid_mask = 0x00ff0000
-    cdef uint32_t high_mask = 0xff000000
-    cdef uint32_t small_shift = 8
-    cdef uint32_t big_shift = 24
-    output = (
-        (input & low_mask) << big_shift |
-        (input & low_mid_mask) << small_shift | 
-        (input & high_mid_mask) >> small_shift |
-        (input & high_mask ) >> big_shift
-    )
-    return output
 
 cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
     """Loader for Coldshot profiles
