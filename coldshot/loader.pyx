@@ -2,7 +2,7 @@
 import os, urllib, sys, mmap, logging
 from . import profiler
 from coldshot cimport *
-from callsfile cimport *
+from eventsfile cimport *
 log = logging.getLogger( __name__ )
 
 __all__ = ("Loader",)
@@ -544,7 +544,7 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         for call_file in self.call_files:
             self.process_call_file( call_file )
     def process_call_file( self, calls_filename ):
-        """Process a CallsFile to extract basic cProfile-like information
+        """Process a EventsFile to extract basic cProfile-like information
         
         Fills in the FunctionInfo members in self.functions with the 
         basic metadata from doing a linear scan of all calls in the calls file
@@ -573,7 +573,7 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         cdef dict stacks = {}
         
         # The source data...
-        cdef CallsFile calls_data = CallsFile( calls_filename )
+        cdef EventsFile calls_data = EventsFile( calls_filename )
         
         function_info = None
         
@@ -631,7 +631,7 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
 #    
 #    def call_tree( self, long index ):
 #        """Yield all of the calls for the given function"""
-#        cdef CallsFile calls_data = CallsFile( calls_filename )
+#        cdef EventsFile calls_data = EventsFile( calls_filename )
 #        cdef uint32_t record_function
 #        cdef list result = []
 #        for i in range( index, calls_data.record_count ):

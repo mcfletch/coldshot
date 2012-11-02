@@ -15,8 +15,8 @@ cdef class MappedFile:
         self.mm.close()
         self.fh.close()
     
-cdef class CallsFile(MappedFile):
-    """Particular mapped file which loads our callsfile data-structures"""
+cdef class EventsFile(MappedFile):
+    """Particular mapped file which loads our eventsfile data-structures"""
     def get_pointer( self, mm ):
         cdef mmap_object * c_level
         c_level = <mmap_object *>mm
@@ -26,7 +26,7 @@ cdef class CallsFile(MappedFile):
         return CallsIterator( self )
         
 cdef class CallsIterator:
-    """Provide python-level iteration over a CallsFile"""
+    """Provide python-level iteration over a EventsFile"""
     def __cinit__( self, records ):
         self.records = records 
         self.position = 0

@@ -117,6 +117,6 @@ def report():
 
 def raw_calls():
     """Load the data-set and print each record as a python dictionary"""
-    scanner = loader.CallsFile( sys.argv[1] )
+    scanner = loader.EventsFile( sys.argv[1] )
     for line in scanner:
         print line
