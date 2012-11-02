@@ -730,18 +730,43 @@ class IndividualRoot:
 
 cdef class Group(Row):
     """Group of N profile-viewable things that are lumped together"""
-    cdef public str name 
-    cdef public list children 
-    def __init__( self, name, children, Loader loader ):
+    cdef public dict children 
+    def __init__( self, list children, Loader loader ):
         Row.__init__( self, loader )
-        self.name = name 
-        self.children = children or []
-        for child in self.children:
+        self.children = {}
+        for child in children:
             self.add_child( child )
     cdef Row add_child( self, Row child ):
-        self.children.append( child )
+        current = self.children.get( child.key )
+        if current is None:
+            self.children[child.key] = [child]
+        else:
+            current.append( child )
+        self.child_time += child.time 
         return child 
-        
+cdef class Call(Row):
+    """Represents a single row..."""
+    cdef uint32_t key
+    cdef uint32_t start
+    cdef uint32_t stop 
+    def __init__( self, uint32_t start, uint32_t stop, uint32_t key, Loader loader ):
+        Row.__init__( self, loader )
+        self.start = start 
+        self.stop = stop 
+        self.key = key 
+        self.time = stop - start 
+    @property 
+    def function( self ):
+        return self.loader.functions.get( self.key )
+    def CallGroup __add__( self, other ):
+        if isinstance( other, Call ):
+            return CallGroup( self.key, [self,other], self.loader )
+        elif isinstance( other, CallGroup ):
+            other.add_child( self )
+            return other 
+        else:
+            raise RuntimeError( "Don't know how to add Call to %s"%( other.__class__.__name__ ))
+    
 cdef class CallGroup(Group):
     """Set of calls which are grouped together
     
@@ -756,4 +781,41 @@ cdef class CallGroup(Group):
     below this level...
     
     Could do it based on time too?
+    
+    loader 
+        Call (root)
+            children 
+                Call/CallGroup 
+                    children 
+        
+    When adding a child to a group, if the group's children are > than 
+        2**8, then compress each set of two children by adding their stats
+        and merging their children-dicts...
+            children is ID: Call/CallGroup 
+                for each ID in the set, if there is a corresponding ID in the 
+                other set, then the result is the ID: (A+B) otherwise result is 
+                just A for each ID left in B, result is B
+                
     """
+    cdef uint32_t key 
+    def __init__( self, uint32_t key, list children, Loader loader ):
+        Group.__init__( children, loader )
+        self.key = key 
+    def __add__( self, other ):
+        if isinstance( other, Call ):
+            self.add_child( other )
+            return self 
+        elif isinstance( other, CallGroup ):
+            self.time += other.time 
+            self.calls += other.calls 
+            self.child_time += other.child_time 
+            for child in other.children.values():
+                current = self.children.get( child.key )
+                if current is None:
+                    self.children[child.key] = child 
+                else:
+                    self.children[child.key] = child + current 
+            return self 
+        else:
+            raise RuntimeError( """Don't know how to add CallGroup to %s instances"""%( other.__class__.__name__ ))
+    
