@@ -105,13 +105,23 @@ cdef class FileInfo:
     All built-in functions currently declare the same file number (0), so all 
     built-ins will appear to come from a single file.
     """
-    def __init__( self, path, fileno ):
+    def __init__( self, path, fileno, loader ):
         self.path = path
         self.directory, self.filename = os.path.split( path )
         self.fileno = fileno 
+        self.loader = loader
     def __unicode__( self ):
         return '<%s for %s>'%( self.__class__.__name__, self.filename )
     __repr__ = __unicode__
+    @property 
+    def children( self ):
+        if self._children = None:
+            self._children = [
+                f for f in self.loader.functions
+                if f.file is self 
+            ]
+            self._children.sort( key = lambda x: (x.cumulative,x.name) )
+        return self._children
 
 cdef class Row:
     """Base class for all profile-row types"""
@@ -428,3 +438,33 @@ cdef class CallInfo:
             result = possible
         return result
     
+cdef class Grouping:
+    """Static grouping of elements for presentation"""
+    def __init__( self, key, list children, str name="Group", LoaderInfo loader ):
+        self.key = key
+        self.name = name
+        self.children = children
+        self.calls = sum( [x.calls for x in children], 0 )
+        self.cumulative = sum( [x.cumulative for x in children], 0.0)
+        self.cumulativePer = self.cumulative / float(self.calls or 1)
+        self.local = 0
+        self.localPer = 0.0
+        self.empty = 0.0
+        self.loader = loader
+    def child_cumulative_time( self, other ):
+        """Return fraction of our time spent in other"""
+        return other.cumulative / float( self.cumulative or 1 )
+    
+cdef class ModuleInfo( Grouping ):
+    """Synthetic group representing a file-oriented view of the data"""
+    def __init__( self, list children, str module ):
+        Grouping.__init__( self, module, children, 'Module: %s'%(module,) )
+    @property 
+    def parents( self ):
+        """Only ever one parent for a module"""
+        name = self.key.split('.')[:-1]
+        parent = self.loader.modules.get( name )
+        if parent:
+            return [parent]
+        return []
+

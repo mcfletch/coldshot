@@ -70,6 +70,8 @@ cdef class FileInfo:
     cdef public object filename 
     cdef public object directory
     cdef public object path 
+    cdef public LoaderInfo loader
+    cdef object _children
 
 cdef class CallInfo:
     cdef FunctionInfo function 
@@ -87,3 +89,12 @@ cdef class CallInfo:
     cdef uint32_t record_stop_child( self, uint32_t delta, uint32_t child )
     cdef uint32_t record_line( self, uint16_t new_line, uint32_t stop )
     
+cdef class Grouping:
+    cdef object key
+    cdef float calls
+    cdef float cumulative 
+    cdef float cumulativePer
+    cdef float local 
+    cdef float empty 
+    cdef float localPer
+    cdef list children 
