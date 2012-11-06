@@ -111,7 +111,7 @@ cdef class Stack:
         self.start = timestamp 
         self.stop = timestamp
         self.context_switches = 0
-        self.individual_calls = 0
+        self.individual_calls = ('*','*') in loader.individual_calls
         
         self.function_stack = []
         self.push( root, timestamp, -1 )
@@ -440,7 +440,6 @@ cdef class CallInfo:
                 if call_info.thread == self.thread:
                     if call_info.start_index > self.start_index and call_info.stop_index < self.stop_index:
                         possible.append( (call_info.start_index,call_info) )
-                        
         self._children = self._remove_overlaps( possible )
         for child in self._children:
             child_time += child.time 

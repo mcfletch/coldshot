@@ -101,6 +101,8 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                 function = self.info.function_names.get( key )
                 if function is not None:
                     result.add( function.key )
+                elif key == ('*','*'):
+                    result.add( key )
                 else:
                     log.warn( 'No function with key %s found', key )
             else:

@@ -7,30 +7,51 @@ class CallTree(wx.TreeCtrl):
     def __init__(self, *args, **kwargs):
         super(CallTree, self).__init__(*args, **kwargs)
         self.Bind(wx.EVT_TREE_ITEM_EXPANDING, self.OnExpandItem)
-        self.loader = loader.Loader( '.profile', individual_calls=set([1]))
+        self.loader = loader.Loader( '.profile', individual_calls=set([('*','*')]))
         self.loader.load()
         self.rootID = self.AddRoot('Functions')
         self.SetPyData( self.rootID, self.loader.info )
         self.SetItemHasChildren(self.rootID)
         self.Expand( self.rootID )
 
+    def HasChildren( self, item ):
+        cid,citem = self.GetFirstChild(item)
+        return cid.IsOk()
+        
+        
     def OnExpandItem(self, event):
         item = event.GetItem()
         node = self.GetPyData( item )
         if isinstance( node, stack.LoaderInfo ):
             # children are functions 
-            cid,citem = self.GetFirstChild(item)
-            if not cid.IsOk():
+            if not self.HasChildren( item ):
                 # not already filled out
                 functions = node.functions.values()
-                functions.sort( key = lambda x: (x.cumulative,x.name))
+                functions.sort( key = lambda x: (-x.cumulative,x.name))
                 for function in functions:
-                    function_id = self.AppendItem( item, '%s.%s'%( function.module, function.name ))
-                    self.SetPyData( function_id, function )
-                    if function.individual_calls:
-                        self.SetItemHasChildren( function_id )
-        
-
+                    self.AddFunction( item, function )
+        elif isinstance( node, (stack.FunctionInfo, stack.CallInfo) ):
+            # children are individual calls
+            if not self.HasChildren( item ):
+                if isinstance( node, stack.FunctionInfo):
+                    calls = node.individual_calls[:]
+                else:
+                    calls = node.children
+                for call in calls:
+                    self.AddCall( item, call )
+    def AddFunction(self, parent_id, function ):
+        function_id = self.AppendItem( parent_id, '%s.%s'%( function.module, function.name ))
+        self.SetPyData( function_id, function )
+        if function.individual_calls:
+            self.SetItemHasChildren( function_id )
+        return function_id
+    def AddCall( self, parent_id, call ):
+        call_id = self.AppendItem( parent_id, '%0.5f @ %s -> %s.%s'%( call.cumulative, call.start_index, call.function.module, call.function.name ))
+        self.SetPyData( call_id, call )
+        if call.children:
+            self.SetItemHasChildren( call_id )
+        return call_id
+    
 class CallTreeFrame(wx.Frame):
     def __init__(self, *args, **kwargs):
         super(CallTreeFrame, self).__init__(*args, **kwargs)

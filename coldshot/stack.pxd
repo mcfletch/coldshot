@@ -76,12 +76,12 @@ cdef class FileInfo:
     cdef object _children
 
 cdef class CallInfo:
-    cdef FunctionInfo function 
-    cdef uint16_t thread
-    cdef uint32_t start 
-    cdef uint32_t stop
-    cdef long start_index
-    cdef long stop_index
+    cdef public FunctionInfo function 
+    cdef public uint16_t thread
+    cdef public uint32_t start 
+    cdef public uint32_t stop
+    cdef public long start_index
+    cdef public long stop_index
     cdef list _children
     cdef uint32_t _child_time
     
