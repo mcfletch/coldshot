@@ -27,11 +27,13 @@ cdef class Stack:
     cdef public long context_switches
     cdef list function_stack
     cdef uint16_t individual_calls
+    cdef public bint debugging
     
     cdef push( self, FunctionInfo function_info, uint32_t timestamp, long index )
     cdef pop( self, uint32_t timestamp, long index )
     cdef line( self, uint16_t line, uint32_t timestamp )
     cdef record_context_switch( self, uint32_t timestamp )
+    cdef debug_stack( self )
 
 cdef class FunctionInfo:
     cdef public long calls 

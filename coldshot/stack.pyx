@@ -118,12 +118,27 @@ cdef class Stack:
     
     cdef record_context_switch( self, uint32_t timestamp ):
         self.context_switches += 1
+    cdef debug_stack( self ):
+        cdef CallInfo call_info
+        if self.function_stack:
+            call_info = self.function_stack[-1]
+            print call_info.start_index, call_info
+            for i,call_info in enumerate(self.function_stack):
+                print '%05i %s%s.%s'%(
+                    call_info.start_index, 
+                    ' '*(i+1),
+                    call_info.function.module, 
+                    call_info.function.name 
+                )
     cdef push( self, FunctionInfo function_info, uint32_t timestamp, long index ):
         """Push a new record onto the function stack"""
         call_info = CallInfo( function_info, timestamp, index, self.thread )
         self.function_stack.append( call_info )
-#        if function_info.module == 'OpenGL.plugins':
-#            print self.function_stack
+#        if function_info.module == 'OpenGL.plugins' and function_info.name == '<module>':
+#            self.debugging = True
+        if self.debugging:
+            print 'pushed'
+            self.debug_stack()
         if function_info.key in function_info.loader.individual_calls:
             self.individual_calls += 1
         if self.individual_calls:
@@ -132,6 +147,9 @@ cdef class Stack:
         """Pop a single record from the stack at given timestamp"""
         cdef CallInfo call_info 
         cdef uint32_t current_function 
+        if self.debugging:
+            print 'popping'
+            self.debug_stack()
         
         call_info = <CallInfo>(self.function_stack[-1])
         call_info.record_line( call_info.function.line, timestamp )
