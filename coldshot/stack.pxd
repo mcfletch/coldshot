@@ -11,11 +11,13 @@ cdef class LoaderInfo:
     cdef public dict threads
     cdef public dict roots
     cdef public set individual_calls
+    cdef public dict modules
     
     cdef FileInfo add_file( self, filename, uint16_t fileno )
     cdef FunctionInfo add_function( self, FunctionInfo function )
     cdef Stack add_thread( self, Stack stack )
-    cdef add_root( self, key, root )
+    cdef object add_root( self, key, root )
+    cdef Grouping add_module( self, module_name, path )
 
 cdef class Stack:
     cdef public uint16_t thread 
@@ -90,11 +92,22 @@ cdef class CallInfo:
     cdef uint32_t record_line( self, uint16_t new_line, uint32_t stop )
     
 cdef class Grouping:
-    cdef object key
-    cdef float calls
-    cdef float cumulative 
-    cdef float cumulativePer
-    cdef float local 
-    cdef float empty 
-    cdef float localPer
-    cdef list children 
+    cdef public object key
+    cdef public object name
+    cdef public LoaderInfo loader
+    
+    cdef public list children 
+    
+    cdef public long calls
+    cdef public float cumulative 
+    cdef public float cumulativePer
+    cdef public float local 
+    cdef public float empty 
+    cdef public float localPer
+
+cdef class PackageInfo( Grouping ):
+    pass
+cdef class ModuleInfo( PackageInfo ):
+    cdef public object path
+    cdef public object directory 
+    cdef public object filename 

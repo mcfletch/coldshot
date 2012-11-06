@@ -10,6 +10,7 @@ cdef class LoaderInfo:
         self.file_names = {}
         self.threads = {}
         self.roots = {}
+        self.modules = {}
         
         self.individual_calls = set()
         
@@ -26,14 +27,21 @@ cdef class LoaderInfo:
             0,
             self
         )))
+        file_root = PackageInfo( '', self )
+        self.add_root( 'files', file_root )
+        self.modules[''] = file_root
+        
     cdef FileInfo add_file( self, filename, uint16_t fileno ):
         cdef FileInfo file = FileInfo( filename, fileno )
         self.files[ fileno ] = self.file_names[ filename ] = file 
         return file
     cdef FunctionInfo add_function( self, FunctionInfo function ):
         """Register a new function"""
+        cdef ModuleInfo module
         self.functions[ function.key ] = function 
         self.function_names[ (function.module,function.name) ] = function 
+        module = self.add_module( function.module, function.path )
+        module.children.append( function )
         return function
     cdef Stack add_thread( self, Stack stack ):
         self.threads[ stack.thread ] = stack
@@ -53,6 +61,36 @@ cdef class LoaderInfo:
         """Produce the set of all rows"""
         return self.functions.values()
     
+    cdef Grouping add_module( self, module_name, path ):
+        """Add a module to our set of defined modules"""
+        cdef list fragments 
+        cdef object last, current
+        current = self.modules.get( module_name )
+        if current is not None:
+            # short circuit since we've already created it...
+            return current 
+        fragments = module_name.split('.')
+        last = None
+        current = None
+        for i in range( len(fragments)+1):
+            name = '.'.join( fragments[:i] )
+            current = self.modules.get( name )
+            if current is None:
+                if name == module_name:
+                    self.modules[name] = current = ModuleInfo( name, path, self )
+                else:
+                    self.modules[name] = current = PackageInfo( name, self )
+                if last is not None:
+                    last.children.append( current )
+            last = current 
+        return current
+    def location_rows( self ):
+        """Get our location records (finalized)"""
+        result = self.modules.items()
+        result.sort(reverse=True)
+        for key,module in result:
+            module.calculate_totals()
+        return self.modules
 
 cdef class Stack:
     def __cinit__( self, uint16_t thread, uint32_t timestamp, LoaderInfo loader, FunctionInfo root ):
@@ -105,23 +143,13 @@ cdef class FileInfo:
     All built-in functions currently declare the same file number (0), so all 
     built-ins will appear to come from a single file.
     """
-    def __init__( self, path, fileno, loader ):
+    def __init__( self, path, fileno ):
         self.path = path
         self.directory, self.filename = os.path.split( path )
         self.fileno = fileno 
-        self.loader = loader
     def __unicode__( self ):
         return '<%s for %s>'%( self.__class__.__name__, self.filename )
     __repr__ = __unicode__
-    @property 
-    def children( self ):
-        if self._children = None:
-            self._children = [
-                f for f in self.loader.functions
-                if f.file is self 
-            ]
-            self._children.sort( key = lambda x: (x.cumulative,x.name) )
-        return self._children
 
 cdef class Row:
     """Base class for all profile-row types"""
@@ -440,25 +468,59 @@ cdef class CallInfo:
     
 cdef class Grouping:
     """Static grouping of elements for presentation"""
-    def __init__( self, key, list children, str name="Group", LoaderInfo loader ):
+    def __init__( self, key, str name, LoaderInfo loader ):
         self.key = key
         self.name = name
-        self.children = children
-        self.calls = sum( [x.calls for x in children], 0 )
-        self.cumulative = sum( [x.cumulative for x in children], 0.0)
-        self.cumulativePer = self.cumulative / float(self.calls or 1)
+        self.children = []
+        self.loader = loader
+        self.calls = 0
+        self.cumulative = 0
+        self.cumulativePer = 0
         self.local = 0
         self.localPer = 0.0
         self.empty = 0.0
-        self.loader = loader
     def child_cumulative_time( self, other ):
         """Return fraction of our time spent in other"""
         return other.cumulative / float( self.cumulative or 1 )
+    def calculate_totals( self ):
+        self.calls = sum( [x.calls for x in self.children], 0 )
+        self.cumulative = sum( [x.cumulative for x in self.children], 0.0)
+        self.cumulativePer = self.cumulative / float(self.calls or 1)
+    def __repr__( self ):
+        return '<%s %s %s:%ss>'%(
+            self.__class__.__name__,
+            self.key,
+            self.calls,
+            self.cumulative,
+        )
     
-cdef class ModuleInfo( Grouping ):
-    """Synthetic group representing a file-oriented view of the data"""
-    def __init__( self, list children, str module ):
-        Grouping.__init__( self, module, children, 'Module: %s'%(module,) )
+cdef class PackageInfo( Grouping ):
+    """Set of modules"""
+    def __init__( self, str module, LoaderInfo loader ):
+        if module:
+            name = 'Package: %s'%(module,)
+        else:
+            name = '<PYTHONPATH>'
+        Grouping.__init__( self, module, name, loader )
+        
+cdef class ModuleInfo( PackageInfo ):
+    """A particular module (function.__module__)
+    
+    Only function-local time is included in cumulative, so the result is that 
+    the text-of-the-module is what is represented into the representation.
+    """
+    def __init__( self, str module, str path, LoaderInfo loader ):
+        name = 'Module: %s'%( module, )
+        
+        self.path = path 
+        self.directory, self.filename = os.path.split( path )
+        
+        Grouping.__init__( self, module, name, loader )
+    def calculate_totals( self ):
+        """Calculate our totals from our children (only counts function localtime)"""
+        self.cumulative = sum( [x.local for x in self.children], 0.0)
+        self.cumulativePer = self.cumulative / float(self.calls or 1)
+        self.calls = sum( [x.calls for x in self.children], 0 )
     @property 
     def parents( self ):
         """Only ever one parent for a module"""
@@ -467,4 +529,3 @@ cdef class ModuleInfo( Grouping ):
         if parent:
             return [parent]
         return []
-

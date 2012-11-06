@@ -207,7 +207,6 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         
         self.info.threads.update( stacks )
         calls_data.close()
-
     
     def individual_root( self ):
         """Create a root for all of our individually-tracked call roots..."""

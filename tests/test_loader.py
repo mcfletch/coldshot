@@ -60,6 +60,13 @@ class TestLoader( TestLoaderBase ):
     def test_root_children( self ):
         root = self.loader.info.function_names[ ('*','*') ]
         assert len( root.children ) == 2, root.children
+    
+    def test_module_rows( self ):
+        rows = self.loader.info.location_rows()
+        time= rows['time']
+        assert .004 < time.cumulative < .005, """Expect better resolution than .001"""
+    
+    
 
 class TestLoaderIndividual( TestLoaderBase ):
     def create_loader( self ):
