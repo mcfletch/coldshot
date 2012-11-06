@@ -65,8 +65,12 @@ class TestLoader( TestLoaderBase ):
         rows = self.loader.info.location_rows()
         time= rows['time']
         assert .004 < time.cumulative < .005, """Expect better resolution than .001"""
-    
-    
+        for row in rows.values():
+            row.empty # testing accessing it...
+            if row.key != '':
+                assert row.parents 
+            else:
+                assert not row.parents
 
 class TestLoaderIndividual( TestLoaderBase ):
     def create_loader( self ):
