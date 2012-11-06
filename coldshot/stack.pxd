@@ -33,13 +33,11 @@ cdef class Stack:
     cdef line( self, uint16_t line, uint32_t timestamp )
     cdef record_context_switch( self, uint32_t timestamp )
 
-cdef class Row:
-    """Base class for all profile-row types"""
+cdef class FunctionInfo:
     cdef public long calls 
     cdef public long time
     cdef public long child_time
     cdef public LoaderInfo loader 
-cdef class FunctionInfo(Row):
     cdef public uint32_t key
     cdef public str module 
     cdef public str name 

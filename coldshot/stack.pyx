@@ -27,9 +27,9 @@ cdef class LoaderInfo:
             0,
             self
         )))
-        file_root = PackageInfo( '', self )
-        self.add_root( 'files', file_root )
-        self.modules[''] = file_root
+        module_root = PackageInfo( '', self )
+        self.add_root( 'modules', module_root )
+        self.modules[''] = module_root
         
     cdef FileInfo add_file( self, filename, uint16_t fileno ):
         cdef FileInfo file = FileInfo( filename, fileno )
@@ -37,7 +37,7 @@ cdef class LoaderInfo:
         return file
     cdef FunctionInfo add_function( self, FunctionInfo function ):
         """Register a new function"""
-        cdef ModuleInfo module
+        cdef Grouping module
         self.functions[ function.key ] = function 
         self.function_names[ (function.module,function.name) ] = function 
         module = self.add_module( function.module, function.path )
@@ -49,6 +49,9 @@ cdef class LoaderInfo:
     cdef add_root( self, key, root ):
         self.roots[ key ] = root 
         return root 
+    def get_root( self, key ):
+        """Get the given root, raise KeyError if not defined"""
+        return self.roots[key]
     def parents_of( self, FunctionInfo child ):
         """Retrieve those functions who are parents of functioninfo"""
         cdef FunctionInfo possible 
@@ -84,8 +87,17 @@ cdef class LoaderInfo:
                     last.children.append( current )
             last = current 
         return current
+    def function_rows( self ):
+        """Get cProfile-like function metadata rows
+        
+        returns an ID: function mapping
+        """
+        return self.functions
     def location_rows( self ):
-        """Get our location records (finalized)"""
+        """Get our location records (finalized)
+        
+        returns an module-name: Grouping mapping
+        """
         result = self.modules.items()
         result.sort(reverse=True)
         for key,module in result:
@@ -151,70 +163,7 @@ cdef class FileInfo:
         return '<%s for %s>'%( self.__class__.__name__, self.filename )
     __repr__ = __unicode__
 
-cdef class Row:
-    """Base class for all profile-row types"""
-    def __init__( self, LoaderInfo loader ):
-        self.loader = loader
-        self.time = 0
-        self.calls = 0
-        self.child_time = 0
-    @property 
-    def local( self ):
-        if self.time >= self.child_time:
-            return (self.time - self.child_time) * self.loader.timer_unit
-        else:
-            return 0.0
-    @property 
-    def empty( self ):
-        """Calculate local time as a fraction of total time"""
-        if self.time >= self.child_time:
-            return (self.time - self.child_time)/float( self.time )
-        return 0.0
-    @property 
-    def cumulative( self ):
-        """Cumulative time in seconds"""
-        return self.time * self.loader.timer_unit
-    @property 
-    def localPer( self ):
-        """Average local time in seconds per call"""
-        return self.local / ( self.calls or 1 )
-    @property 
-    def cumulativePer( self ):
-        """Average cumulative time in seconds per call"""
-        return self.cumulative / (self.calls or 1 )
-
-    @property
-    def cumulative( self ):
-        return (self.stop - self.start) * self.function.loader.timer_unit
-    @property 
-    def filename( self ):
-        return self.function.filename
-    @property 
-    def lineno( self ):
-        return self.function.lineno 
-    @property 
-    def local( self ):
-        # TODO: needs cache
-        cdef uint32_t result = 0
-        cdef CallInfo child 
-        cdef uint32_t last_ts = self.start
-        for child in self.children:
-            result += child.start - last_ts 
-            last_ts = child.stop 
-        result += self.stop - last_ts 
-        return result * self.function.loader.timer_unit
-    @property 
-    def empty( self ):
-        return self.local / self.cumulative
-    
-    def __repr__( self ):
-        return '<%s records[%s:%s] duration=%ss>'%(
-            self.function.name,
-            self.start_index, self.stop_index,
-            self.cumulative,
-        )
-
-cdef class FunctionInfo(Row):
+cdef class FunctionInfo:
     """Represents call/trace information for a single function
     
     Attributes of note:
@@ -239,8 +188,9 @@ cdef class FunctionInfo(Row):
     """
     def __init__( self, uint32_t key, str module, str name, FileInfo file, uint16_t line, LoaderInfo loader ):
         """Initialize the FunctionInfo instance"""
-        Row.__init__( self, loader )
+        self.loader = loader
         self.key = key
+        
         self.module = module 
         self.name = name 
         self.file = file
@@ -250,18 +200,38 @@ cdef class FunctionInfo(Row):
         self.child_map = {}
         self.individual_calls = []
         
+        self.time = 0
+        self.calls = 0
+        self.child_time = 0
         self.first_timestamp = 0
         self.last_timestamp = 0
+    
     # external data-API showing seconds 
     @property 
-    def cumulative( self ):
-        return self.time * self.loader.timer_unit
-    @property 
     def local( self ):
-        if self.time > self.child_time:
+        if self.time >= self.child_time:
             return (self.time - self.child_time) * self.loader.timer_unit
         else:
             return 0.0
+    @property 
+    def empty( self ):
+        """Calculate local time as a fraction of total time"""
+        if self.time >= self.child_time:
+            return (self.time - self.child_time)/float( self.time )
+        return 0.0
+    @property 
+    def cumulative( self ):
+        """Cumulative time in seconds"""
+        return self.time * self.loader.timer_unit
+    @property 
+    def localPer( self ):
+        """Average local time in seconds per call"""
+        return self.local / ( self.calls or 1 )
+    @property 
+    def cumulativePer( self ):
+        """Average cumulative time in seconds per call"""
+        return self.cumulative / (self.calls or 1 )
+    
     @property 
     def lineno( self ):
         return self.line 
@@ -498,10 +468,19 @@ cdef class PackageInfo( Grouping ):
     """Set of modules"""
     def __init__( self, str module, LoaderInfo loader ):
         if module:
-            name = 'Package: %s'%(module,)
+            name = module
         else:
             name = '<PYTHONPATH>'
         Grouping.__init__( self, module, name, loader )
+    @property 
+    def parents( self ):
+        if not self.key:
+            return []
+        name = '.'.join( self.key.split('.')[:-1])
+        parent = self.loader.modules.get( name )
+        if parent:
+            return [parent]
+        return []
         
 cdef class ModuleInfo( PackageInfo ):
     """A particular module (function.__module__)
@@ -510,12 +489,13 @@ cdef class ModuleInfo( PackageInfo ):
     the text-of-the-module is what is represented into the representation.
     """
     def __init__( self, str module, str path, LoaderInfo loader ):
-        name = 'Module: %s'%( module, )
-        
         self.path = path 
         self.directory, self.filename = os.path.split( path )
         
-        Grouping.__init__( self, module, name, loader )
+        Grouping.__init__( self, module, module, loader )
+    def child_cumulative_time( self, other ):
+        """Return fraction of our time spent in other"""
+        return other.local / float( self.cumulative or 1 )
     def calculate_totals( self ):
         """Calculate our totals from our children (only counts function localtime)"""
         self.cumulative = sum( [x.local for x in self.children], 0.0)
@@ -524,7 +504,9 @@ cdef class ModuleInfo( PackageInfo ):
     @property 
     def parents( self ):
         """Only ever one parent for a module"""
-        name = self.key.split('.')[:-1]
+        if not self.key:
+            return []
+        name = '.'.join( self.key.split('.')[:-1])
         parent = self.loader.modules.get( name )
         if parent:
             return [parent]
