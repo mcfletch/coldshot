@@ -122,6 +122,8 @@ cdef class Stack:
         """Push a new record onto the function stack"""
         call_info = CallInfo( function_info, timestamp, index, self.thread )
         self.function_stack.append( call_info )
+#        if function_info.module == 'OpenGL.plugins':
+#            print self.function_stack
         if function_info.key in function_info.loader.individual_calls:
             self.individual_calls += 1
         if self.individual_calls:
@@ -322,6 +324,14 @@ cdef class CallInfo:
         self.start_index = start_index
         self.stop_index = start_index
         self._children = None
+    def __repr__( self ):
+        return '<%s for %s at index %s %ss:%ss>'%(
+            self.__class__.__name__,
+            self.function,
+            self.start_index,
+            self.start * self.function.loader.timer_unit,
+            self.stop * self.function.loader.timer_unit,
+        )
     cdef public uint32_t record_stop( self, uint32_t stop, long stop_index ):
         cdef uint32_t delta = stop - self.start 
         self.stop = stop
