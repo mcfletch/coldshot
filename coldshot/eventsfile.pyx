@@ -27,19 +27,41 @@ cdef class EventsFile(MappedFile):
         self.records = <event_info *>(c_level[0].data)
         self.record_count = self.filesize // sizeof( event_info )
     def __iter__( self ):
-        return CallsIterator( self )
+        return CallsIterator( self, 0, self.record_count, 1 )
+    def __getitem__( self, i ):
+        if isinstance( i, slice ):
+            start,stop,step = i.start,i.stop,i.step 
+            if start is None:
+                start = 0
+            if stop is None:
+                stop = self.record_count
+            if step is None:
+                step = 1
+            stop = min( (self.record_count,stop))
+            start = max((0,start))
+            return CallsIterator( self, start,stop,step )
+        else:
+            return self.records[i]
         
 cdef class CallsIterator:
     """Provide python-level iteration over a EventsFile"""
-    def __cinit__( self, records ):
+    def __cinit__( self, records, start=0, stop=-1, step=1 ):
         self.records = records 
-        self.position = 0
+        self.position = start
+        self.stop = stop
+        self.step = step
     def __next__( self ):
-        if self.position < self.records.record_count:
+        # TODO: allow for start > stop
+        if self.position < self.stop and self.position >= 0:
             result = <object>(self.records.records[self.position])
-            self.position += 1
+            result['index'] = self.position
+            result['flags'] = (result['function'] & 0xff000000) >> 24
+            result['function'] = result['function'] & 0x00ffffff
+            self.position += self.step
             return result 
         raise StopIteration( self.position )
+    def __iter__( self ):
+        return CallsIterator( self.records, self.position, self.stop, self.step )
 
 def byteswap_16( input ):
     return swap_16( input )

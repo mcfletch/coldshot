@@ -1,4 +1,6 @@
+from coldshot.cprofdecorator import profile
 
+@profile
 def a():
     for i in range( 8 ):
         for j in b():

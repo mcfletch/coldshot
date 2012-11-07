@@ -27,7 +27,7 @@ class CallTree(wx.TreeCtrl):
             if not self.HasChildren( item ):
                 # not already filled out
                 functions = node.functions.values()
-                functions.sort( key = lambda x: (-x.cumulative,x.name))
+                functions.sort( key = lambda x: (x.module,x.name))
                 for function in functions:
                     self.AddFunction( item, function )
         elif isinstance( node, (stack.FunctionInfo, stack.CallInfo) ):
@@ -46,7 +46,7 @@ class CallTree(wx.TreeCtrl):
             self.SetItemHasChildren( function_id )
         return function_id
     def AddCall( self, parent_id, call ):
-        call_id = self.AppendItem( parent_id, '%0.5f @ %s -> %s.%s'%( call.cumulative, call.start_index, call.function.module, call.function.name ))
+        call_id = self.AppendItem( parent_id, '%0.5f [%s:%s] @ %s:%s -> %s.%s:%s'%( call.cumulative, call.start, call.stop, call.start_index, call.stop_index, call.function.module, call.function.name, call.function.line ))
         self.SetPyData( call_id, call )
         if call.children:
             self.SetItemHasChildren( call_id )

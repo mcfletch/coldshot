@@ -14,6 +14,8 @@ cdef class EventsFile(MappedFile):
 cdef class CallsIterator:
     cdef EventsFile records
     cdef long position
+    cdef long stop
+    cdef long step
 
 cdef uint16_t swap_16( uint16_t input )
 cdef uint32_t swap_32( uint32_t input )

@@ -1,5 +1,5 @@
 """Top level (mainloop-like) operations"""
-from . import profiler, loader, reporter
+from . import profiler, loader, reporter, eventsfile
 import tempfile, atexit, sys
 from optparse import OptionParser
 
@@ -115,8 +115,42 @@ def report():
     print report.report()
     return 0
 
+def raw_options():
+    usage = """%prog [options]"""
+    description = """Print out raw event records from a coldshot data-file/directory"""
+    parser = OptionParser( 
+        usage=usage, add_help_option=True, description=description,
+    )
+    parser.add_option( 
+        '-i', '--input', dest='input', metavar='DIRECTORY', default='.profile',
+        help='Directory from which to read',
+    )
+    parser.add_option(
+        '-s', '--start', dest='start', metavar='INTEGER', default=0,
+        type="int",
+    )
+    parser.add_option(
+        '-S', '--stop', dest='stop', metavar='INTEGER', default=None,
+        type="int",
+    )
+    return parser
+
+    
 def raw_calls():
     """Load the data-set and print each record as a python dictionary"""
-    scanner = loader.EventsFile( sys.argv[1] )
-    for line in scanner:
-        print line
+    parser = raw_options()
+    options,args = parser.parse_args()
+    if args:
+        options.input = args[0]
+        args = args[1:]
+    scanner = eventsfile.EventsFile( options.input )
+    
+    depth = 0
+    for line in scanner[options.start:(options.stop or scanner.record_count)]:
+        if line['flags'] == 1:
+            depth += 1
+        print '%s%s'%( ' '*depth,line )
+        if line['flags'] == 2:
+            depth -= 1
+        if depth < 0:
+            depth = 0

@@ -134,11 +134,6 @@ cdef class Stack:
         """Push a new record onto the function stack"""
         call_info = CallInfo( function_info, timestamp, index, self.thread )
         self.function_stack.append( call_info )
-#        if function_info.module == 'OpenGL.plugins' and function_info.name == '<module>':
-#            self.debugging = True
-        if self.debugging:
-            print 'pushed'
-            self.debug_stack()
         if function_info.key in function_info.loader.individual_calls:
             self.individual_calls += 1
         if self.individual_calls:
@@ -147,9 +142,6 @@ cdef class Stack:
         """Pop a single record from the stack at given timestamp"""
         cdef CallInfo call_info 
         cdef uint32_t current_function 
-        if self.debugging:
-            print 'popping'
-            self.debug_stack()
         
         call_info = <CallInfo>(self.function_stack[-1])
         call_info.record_line( call_info.function.line, timestamp )
@@ -336,9 +328,8 @@ cdef class CallInfo:
     def __init__( self, FunctionInfo function, uint32_t start, long start_index, uint16_t thread ):
         self.function = function 
         self.thread = thread
-        self.start = start 
+        self.last_line_time = self.stop = self.start = start 
         self.last_line = function.line
-        self.last_line_time = start 
         self.start_index = start_index
         self.stop_index = start_index
         self._children = None
