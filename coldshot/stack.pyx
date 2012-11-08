@@ -221,14 +221,14 @@ cdef class FunctionInfo:
     # external data-API showing seconds 
     @property 
     def local( self ):
-        if self.time >= self.child_time:
+        if self.time and self.time >= self.child_time:
             return (self.time - self.child_time) * self.loader.timer_unit
         else:
             return 0.0
     @property 
     def empty( self ):
         """Calculate local time as a fraction of total time"""
-        if self.time >= self.child_time:
+        if self.time and self.time >= self.child_time:
             return (self.time - self.child_time)/float( self.time )
         return 0.0
     @property 
