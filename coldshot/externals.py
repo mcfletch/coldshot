@@ -79,7 +79,7 @@ so it should not be run on long-running processes."""
     parser.disable_interspersed_args()
     return parser
     
-def profile():
+def profile_main():
     """Primary external entry point for profiling 
     
     $ coldshot -o outdirectory scriptfile [arg ... ]
@@ -107,7 +107,7 @@ def profile():
     runctx(code, globals, None, prof_dir=options.output, lines=options.lines)
     return 0
 
-def report():
+def report_main():
     """Load the data-set and print a basic report"""
     load = loader.Loader( sys.argv[1] )
     load.load()
@@ -136,7 +136,7 @@ def raw_options():
     return parser
 
     
-def raw_calls():
+def raw_events_main():
     """Load the data-set and print each record as a python dictionary"""
     parser = raw_options()
     options,args = parser.parse_args()
