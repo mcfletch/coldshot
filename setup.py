@@ -119,10 +119,9 @@ if __name__ == "__main__":
         zip_safe=False,
         entry_points = {
             'console_scripts': [
-                'coldshot = coldshot.externals:profile',
-                'coldshot-report = coldshot.externals:report',
-                'coldshot-lines = coldshot.externals:raw_lines',
-                'coldshot-calls = coldshot.externals:raw_calls',
+                'coldshot = coldshot.externals:profile_main',
+                'coldshot-report = coldshot.externals:report_main',
+                'coldshot-events = coldshot.externals:raw_events_main',
             ]
         },
         **extraArguments
