@@ -456,6 +456,23 @@ cdef class Profiler:
         self.flush()
         self.index.close()
         self.calls.close()
+    
+    # possible APIs
+    # def annotate( self, description ):
+    #    """Create an annotation in the index for given ID
+    #    
+    #    self.functions[description] will be used for identity checks,
+    #    Allows you to add e.g. request ID, or micro-thread ID, etc
+    #    
+    #    returns a 24-bit ID that can be inserted 
+    #    """
+    # def set_annotation( self, id ): # if id == None, removes annotation
+    #    """Set annotation id (edge-triggered)"""
+    # def set_annotation_func( self, AnnotationFunc * func ):
+    #    """Set a function taking (profiler, frame, object) returning annotation ID
+    #    TODO: this would hugely balloon file-sizes unless we limit to N bits of the 
+    #    flags, or something like that...
+    #    """
 
 cdef bytes module_name( PyCFunctionObject func ):
     cdef object local_mod
