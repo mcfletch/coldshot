@@ -27,8 +27,10 @@ cdef class EventsFile(MappedFile):
         self.records = <event_info *>(c_level[0].data)
         self.record_count = self.filesize // sizeof( event_info )
     def __iter__( self ):
+        """Iterate over all of the records in the events file"""
         return CallsIterator( self, 0, self.record_count, 1 )
     def __getitem__( self, i ):
+        """Get or slice the records"""
         if isinstance( i, slice ):
             start,stop,step = i.start,i.stop,i.step 
             if start is None:
@@ -51,6 +53,7 @@ cdef class CallsIterator:
         self.stop = stop
         self.step = step
     def __next__( self ):
+        """Advance to the next record"""
         # TODO: allow for start > stop
         if self.position < self.stop and self.position >= 0:
             result = <object>(self.records.records[self.position])
@@ -61,6 +64,7 @@ cdef class CallsIterator:
             return result 
         raise StopIteration( self.position )
     def __iter__( self ):
+        """Iterate over a sliced calls iterator"""
         return CallsIterator( self.records, self.position, self.stop, self.step )
 
 def byteswap_16( input ):

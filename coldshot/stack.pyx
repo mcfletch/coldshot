@@ -3,6 +3,19 @@ import os, logging
 log = logging.getLogger( __name__ )
 
 cdef class LoaderInfo:
+    """Summary of information loaded from a file
+    
+    functions -- id:FunctionInfo records
+    function_names -- (module,function_name): FunctionInfo records
+    files -- id:FileInfo records 
+    file_names -- name:FileInfo records
+    threads -- id:Stack records 
+    roots -- string_key:root_object records
+    modules -- id:ModuleInfo records
+    timer_unit -- fractional multiplier for raw time
+    bigendian -- whether the source file was written big-endian
+    swapendian -- whether we need to swap the endianness of records
+    """
     def __cinit__( self ):
         self.functions = {}
         self.function_names = {}
@@ -32,6 +45,7 @@ cdef class LoaderInfo:
         self.modules[''] = module_root
         
     cdef FileInfo add_file( self, filename, uint16_t fileno ):
+        """Add a new file record to the loader"""
         cdef FileInfo file = FileInfo( filename, fileno )
         self.files[ fileno ] = self.file_names[ filename ] = file 
         return file
@@ -133,6 +147,7 @@ cdef class Stack:
         """Record the fact that a context switch has occurred"""
         self.context_switches += 1
     cdef debug_stack( self ):
+        """Print out a debug stack trace during loading"""
         cdef CallInfo call_info
         if self.function_stack:
             call_info = self.function_stack[-1]
@@ -326,6 +341,7 @@ cdef class FunctionLineInfo:
         self.time = 0
         self.calls = 0
     cdef add_time( self, uint32_t delta, int exit ):
+        """Add time spent on the line"""
         self.time += delta 
         if not exit:
             self.calls += 1

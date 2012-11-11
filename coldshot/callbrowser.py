@@ -15,11 +15,12 @@ class CallTree(wx.TreeCtrl):
         self.Expand( self.rootID )
 
     def HasChildren( self, item ):
+        """Does this child have children?"""
         cid,citem = self.GetFirstChild(item)
         return cid.IsOk()
         
-        
     def OnExpandItem(self, event):
+        """Expand this item"""
         item = event.GetItem()
         node = self.GetPyData( item )
         if isinstance( node, stack.LoaderInfo ):
@@ -40,12 +41,14 @@ class CallTree(wx.TreeCtrl):
                 for call in calls:
                     self.AddCall( item, call )
     def AddFunction(self, parent_id, function ):
+        """Add a single function to the tree"""
         function_id = self.AppendItem( parent_id, '%s.%s'%( function.module, function.name ))
         self.SetPyData( function_id, function )
         if function.individual_calls:
             self.SetItemHasChildren( function_id )
         return function_id
     def AddCall( self, parent_id, call ):
+        """Add a call to the tree"""
         call_id = self.AppendItem( parent_id, '%0.5f [%s:%s] @ %s:%s -> %s.%s:%s'%( call.cumulative, call.start, call.stop, call.start_index, call.stop_index, call.function.module, call.function.name, call.function.line ))
         self.SetPyData( call_id, call )
         if call.children:
@@ -53,6 +56,7 @@ class CallTree(wx.TreeCtrl):
         return call_id
     
 class CallTreeFrame(wx.Frame):
+    """Trivial frame wrapper around the call tree"""
     def __init__(self, *args, **kwargs):
         super(CallTreeFrame, self).__init__(*args, **kwargs)
         self.tree = CallTree( self )
