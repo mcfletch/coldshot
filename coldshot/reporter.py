@@ -35,7 +35,7 @@ class Reporter( object ):
                 for (line,lineinfo) in sorted(function.line_map.items()):
                     report.append( '    % 5d % 8.4f % 8d'%(
                         lineinfo.line,
-                        lineinfo.time * self.loader.timer_unit,
+                        lineinfo.time * self.loader.info.timer_unit,
                         lineinfo.calls,
                     ))
         return '\n'.join( report )
