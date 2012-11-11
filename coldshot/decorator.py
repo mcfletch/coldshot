@@ -13,7 +13,7 @@ def profile( directory, **named ):
              lines -- if True, do line-level tracing (requires significantly more 
                  disk-space and processing time)
     
-    @profile( '/path/to/directory' )
+    @profile( '/path/to/directory', lines=True )
     def long_running_function( a,b,c ):
         '''The function to profile'''
     
