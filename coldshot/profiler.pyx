@@ -77,6 +77,7 @@ def timer():
     return <long>hpTimer()
 
 cdef class DataWriter:
+    """Object to write data to a raw FILE pointer"""
     cdef bint opened
     cdef bytes filename
     cdef FILE * fd 
@@ -104,12 +105,14 @@ cdef class DataWriter:
         self.filename = None
     
     cdef FILE * open_file( self, bytes filename ):
+        """Open the given filename for writing"""
         cdef FILE * fd 
         fd = fopen( <char *>filename, 'w' )
         if fd == NULL:
             raise IOError( "Unable to open output file: %s", filename )
         return fd
     cdef ssize_t write_void( self, void * data, ssize_t size ):
+        """Write size bytes from data into our file"""
         cdef ssize_t written
         if not self.opened:
             raise IOError( """Attempt to write to un-opened (or closed) file %s"""%( self.filename, ))
@@ -210,9 +213,11 @@ cdef class IndexWriter(object):
         message = b'D %(type)s %(datafile)s\n'%locals()
         self.fh.write( message )
     def write_file( self, fileno, filename ):
+        """Record presence of a source file and its identifier"""
         message = b'F %d %s\n'%( fileno, urllib.quote( filename ))
         self.fh.write( message )
     def write_func( self, funcno, fileno, lineno, bytes module, bytes name ):
+        """Record presence of function and function id into the index"""
         name = urllib.quote( name )
         module = urllib.quote( module )
         message = b'f %(funcno)d %(fileno)d %(lineno)d %(module)s %(name)s\n'%locals()
@@ -226,8 +231,10 @@ cdef class IndexWriter(object):
         message = b'A %(funcno)d %(description)s'%locals()
         self.fh.write( message )
     def flush( self ):
+        """Flush our buffer"""
         self.fh.flush()
     def close( self ):
+        """Close our file"""
         if self.should_close:
             self.should_close = False
             self.fh.close()
@@ -382,6 +389,7 @@ cdef class Profiler:
     
     # Pass a formatted call onto the writer...
     cdef write_call( self, PyFrameObject frame ):
+        """Write a call record for the given frame into our calls-file"""
         cdef PyCodeObject code
         cdef int func_number 
         cdef uint32_t ts = self.timestamp()
@@ -395,6 +403,7 @@ cdef class Profiler:
         )
         
     cdef write_c_call( self, PyFrameObject frame, PyCFunctionObject * func ):
+        """Write a call to a C function for the frame and object into our calls-file"""
         cdef uint32_t ts = self.timestamp()
         cdef uint32_t func_number = self.builtin_to_number( func )
         self.calls.write_callinfo( 
@@ -406,6 +415,7 @@ cdef class Profiler:
         )
         
     cdef write_return( self, PyFrameObject frame ):
+        """Write a return-from-call for the frame into the calls-file"""
         cdef uint32_t ts = self.timestamp()
         self.calls.write_callinfo( 
             self.thread_id( frame ), 
@@ -416,6 +426,7 @@ cdef class Profiler:
         )
         
     cdef write_line( self, PyFrameObject frame ):
+        """Write a line-event into the calls-file"""
         cdef uint32_t ts = self.timestamp()
         cdef uint16_t thread = self.thread_id( frame )
         cdef uint32_t function =  self.func_to_number( frame )
@@ -510,6 +521,7 @@ cdef class Profiler:
 #        )
 
 cdef bytes module_name( PyCFunctionObject func ):
+    """Extract the module name from the function reference"""
     cdef object local_mod
     if func.m_self != NULL:
         # is a method, use the type's name as the key...
@@ -528,6 +540,7 @@ cdef bytes module_name( PyCFunctionObject func ):
             # func.m_module == NULL
             return b'__builtin__'
 cdef bytes builtin_name( PyCFunctionObject func ):
+    """Extract the name from a C function object"""
     func_name = func.m_ml[0].ml_name
     return func_name
 

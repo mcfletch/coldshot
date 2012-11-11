@@ -105,6 +105,19 @@ cdef class LoaderInfo:
         return self.modules
 
 cdef class Stack:
+    """Stack builds models of the run-time functions during loading (for a single thread)
+    
+    Attributes:
+    
+        thread -- 16-bit thread id
+        loader -- LoaderInfo object
+        start -- 32-bit timestamp for first event in the thread
+        stop -- 32-bit timestamp for the last event in the thread
+        context_switches -- counter of the number of context switches observed
+    
+    TODO: need to have "children" for the stack (thread) to show us what was run 
+    during the thread
+    """
     def __cinit__( self, uint16_t thread, uint32_t timestamp, LoaderInfo loader, FunctionInfo root ):
         self.thread = thread
         self.loader = loader
@@ -117,6 +130,7 @@ cdef class Stack:
         self.push( root, timestamp, -1 )
     
     cdef record_context_switch( self, uint32_t timestamp ):
+        """Record the fact that a context switch has occurred"""
         self.context_switches += 1
     cdef debug_stack( self ):
         cdef CallInfo call_info
@@ -158,6 +172,7 @@ cdef class Stack:
             # child is current_function...
             call_info.record_stop_child( child_delta, current_function )
     cdef line( self, uint16_t line, uint32_t timestamp ):
+        """Record a line event into the stack trace"""
         cdef CallInfo call_info = self.function_stack[-1]
         return call_info.record_line( line, timestamp )
     
@@ -342,6 +357,7 @@ cdef class CallInfo:
             self.stop * self.function.loader.timer_unit,
         )
     cdef public uint32_t record_stop( self, uint32_t stop, long stop_index ):
+        """Record a stop event (call has stopped) event"""
         cdef uint32_t delta = stop - self.start 
         self.stop = stop
         self.stop_index = stop_index
@@ -420,6 +436,7 @@ cdef class CallInfo:
             self.scan_children()
         return self._children
     def scan_children( self ):
+        """Scan our children and find recursive call events"""
         cdef FunctionInfo other_func
         cdef CallInfo call_info
         cdef list possible
@@ -471,6 +488,7 @@ cdef class Grouping:
         """Return fraction of our time spent in other"""
         return other.cumulative / float( self.cumulative or 1 )
     def calculate_totals( self ):
+        """Calculate totals from the sum of our children"""
         self.calls = sum( [x.calls for x in self.children], 0 )
         self.cumulative = sum( [x.cumulative for x in self.children], 0.0)
         self.cumulativePer = self.cumulative / float(self.calls or 1)
@@ -492,6 +510,7 @@ cdef class PackageInfo( Grouping ):
         Grouping.__init__( self, module, name, loader )
     @property 
     def parents( self ):
+        """Determine who is our parent in the packaging hierarchy"""
         if not self.key:
             return []
         name = '.'.join( self.key.split('.')[:-1])

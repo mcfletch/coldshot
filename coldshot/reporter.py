@@ -1,5 +1,6 @@
 
 class Reporter( object ):
+    """Trivial reporter class (present tabular textual statistics)"""
     def __init__( self, loader, sort=('-time','module','name' )):
         self.loader = loader 
         self.set_sort( sort )
@@ -15,6 +16,7 @@ class Reporter( object ):
             return result 
         self.sort = key 
     def report( self ):
+        """Generate textual report with our current setup"""
         functions = self.loader.info.functions.values()
         functions.sort( key=self.sort )
         COLSET = ['module','name','time','calls','local']
