@@ -47,7 +47,9 @@ Contents:
 .. toctree::
    :maxdepth: 2
 
-
+   coldshot.profiler
+   coldshot.loader
+   coldshot.stack
 
 Indices and tables
 ==================
