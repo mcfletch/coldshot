@@ -488,7 +488,7 @@ cdef class Profiler(object):
         self.active = True
         self.internal_discount = 0
         # TODO: wrong, this will cause time to go backward!
-        ifself.internal_start == 0:
+        if self.internal_start == 0:
             self.internal_start = hpTimer()
         PyEval_SetProfile(profile_callback, self)
         if self.lines:
