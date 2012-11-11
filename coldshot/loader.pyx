@@ -43,6 +43,7 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
         """Scan our data-files for basic index information"""
         self.process_index( self.index_filename )
         self.process_calls( )
+        return self.info
     def unquote( self, name ):
         """Remove quoting to get the original name"""
         return urllib.unquote( name )
