@@ -217,6 +217,14 @@ cdef class IndexWriter(object):
         module = urllib.quote( module )
         message = b'f %(funcno)d %(fileno)d %(lineno)d %(module)s %(name)s\n'%locals()
         self.fh.write( message )
+    def write_annotation( self, funcno, description ):
+        if isinstance( description, unicode ):
+            description = description.encode( 'utf-8' )
+        if not isinstance( description, str ):
+            description = str( description )
+        description = urllib.quote( description )
+        message = b'A %(funcno)d %(description)s'%locals()
+        self.fh.write( message )
     def flush( self ):
         self.fh.flush()
     def close( self ):
@@ -246,6 +254,8 @@ cdef class Profiler:
     cdef uint32_t RETURN_FLAGS 
     cdef uint32_t CALL_FLAGS 
     cdef uint32_t LINE_FLAGS
+    cdef uint32_t ANNOTATION_PUSH_FLAGS
+    cdef uint32_t ANNOTATION_POP_FLAGS
     
     cdef int active
     cdef int lines
@@ -280,6 +290,8 @@ cdef class Profiler:
         self.LINE_FLAGS = 0 << 24 # just for consistency
         self.CALL_FLAGS = 1 << 24
         self.RETURN_FLAGS = 2 << 24
+        self.ANNOTATION_PUSH_FLAGS = 3 << 24
+        self.ANNOTATION_POP_FLAGS = 4 << 24
         
     cdef uint32_t file_to_number( self, PyCodeObject code ):
         """Convert a code reference to a file number"""
@@ -294,6 +306,18 @@ cdef class Profiler:
         else:
             count = <long>count_obj
         return count
+    cdef uint32_t annotation_to_number( self, object key ):
+        cdef object count_obj = self.functions.get( key )
+        cdef uint32_t none_value = 0
+        if key is None:
+            return none_value
+        count_obj = self.functions.get( key )
+        if count_obj is None:
+            count = <uint32_t>(len(self.functions)+1)
+            self.functions[key] = count
+            self.index.write_annotation( count, key )
+        return count
+        
     cdef uint32_t func_to_number( self, PyFrameObject frame ):
         """Convert a function reference to a persistent function ID"""
         cdef PyCodeObject code = frame.f_code[0]
@@ -457,22 +481,33 @@ cdef class Profiler:
         self.index.close()
         self.calls.close()
     
-    # possible APIs
-    # def annotate( self, description ):
-    #    """Create an annotation in the index for given ID
-    #    
-    #    self.functions[description] will be used for identity checks,
-    #    Allows you to add e.g. request ID, or micro-thread ID, etc
-    #    
-    #    returns a 24-bit ID that can be inserted 
-    #    """
-    # def set_annotation( self, id ): # if id == None, removes annotation
-    #    """Set annotation id (edge-triggered)"""
-    # def set_annotation_func( self, AnnotationFunc * func ):
-    #    """Set a function taking (profiler, frame, object) returning annotation ID
-    #    TODO: this would hugely balloon file-sizes unless we limit to N bits of the 
-    #    flags, or something like that...
-    #    """
+#    # possible API
+#    def set_annotation( self, annotation, uint16_t lineno=0 ):
+#        """Set annotation id (edge-triggered)
+#        
+#        annotation -- a hashable object to insert into the index and 
+#            assign a "function id" (24-bit integer space shared among 
+#            functions and annotations).  Should *not* be an integer or a 
+#            value which == an integer (float or the like).  All values 
+#            are converted to 8-bit strings, so if you need a structured 
+#            store, use e.g. json encoding and pass the 8-bit string for 
+#            reconstruction
+#            
+#            None -- special indicator, will insert a function id of 0,
+#            which will be treated as an annotation-stack "pop" by readers.
+#        
+#        lineno -- a 16-bit integer passed into the final record, whatever 
+#            arbitrary 16-bit value you would like to store.
+#        """
+#        cdef uint32_t ts = self.timestamp()
+#        cdef uint16_t thread.get_ident()
+#        self.calls.write_callinfo(
+#            self.thread_id( frame ), 
+#            self.annotation_to_number( annotation ), 
+#            ts,
+#            lineno,
+#            self.ANNOTATION_FLAGS,
+#        )
 
 cdef bytes module_name( PyCFunctionObject func ):
     cdef object local_mod
