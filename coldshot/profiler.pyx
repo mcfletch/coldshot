@@ -277,7 +277,9 @@ cdef class Profiler(object):
         """Initialize the profiler (and open all files)
         
         dirname -- directory in which to record profiles 
+        
         lines -- if True, write line traces (default is True)
+        
         version -- file-format version to write
         """
         if not os.path.exists( dirname ):
