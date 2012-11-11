@@ -121,7 +121,7 @@ class TestProfiler( TestCase ):
         assert this_key in load.info.function_names, load.info.function_names
     
     def test_annotation( self ):
-        self.profiler.annotation( 'hello' )
+        self.profiler.annotation( 'hello \n' )
         with self.profiler:
             blah()
             self.profiler.annotation( 'world' )
@@ -131,9 +131,10 @@ class TestProfiler( TestCase ):
         self.profiler.close()
         load = loader.Loader( self.test_dir )
         load.load()
-        assert 'hello' in load.info.annotation_notes
+        assert 'hello \n' in load.info.annotation_notes
         assert 'world' in load.info.annotation_notes 
-        hello = load.info.annotation_notes['hello']
-        real_children = [ x for x in hello.children if x.function.name == 'blah' ]
-        assert len(real_children) == 1, hello.children
+        hello = load.info.annotation_notes['hello \n']
+        assert len(hello.children) == 2, hello.children # blah and annotation expected
+    
+        assert hello.key == 'hello \n', hello.key
         

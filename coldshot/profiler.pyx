@@ -264,8 +264,9 @@ cdef class Profiler(object):
     cdef uint32_t LINE_FLAGS
     cdef uint32_t ANNOTATION_FLAGS
     
-    cdef int active
-    cdef int lines
+    cdef bint active
+    cdef bint lines
+    cdef bint internal
     
     INDEX_FILENAME = b'index.coldshot'
     CALLS_FILENAME = b'coldshot.data'
@@ -293,6 +294,7 @@ cdef class Profiler(object):
         self.functions = {}
         self.threads = {}
         self.active = False
+        self.internal = False
         
         self.LINE_FLAGS = 0 << 24 # just for consistency
         self.CALL_FLAGS = 1 << 24
@@ -393,7 +395,10 @@ cdef class Profiler(object):
         """Write a call record for the given frame into our calls-file"""
         cdef PyCodeObject code
         cdef int func_number 
-        cdef uint32_t ts = self.timestamp()
+        cdef uint32_t ts
+        if self.internal:
+            return
+        ts = self.timestamp()
         func_number = self.func_to_number( frame )
         self.calls.write_callinfo( 
             self.thread_id( frame ), 
@@ -405,8 +410,12 @@ cdef class Profiler(object):
         
     cdef write_c_call( self, PyFrameObject frame, PyCFunctionObject * func ):
         """Write a call to a C function for the frame and object into our calls-file"""
-        cdef uint32_t ts = self.timestamp()
-        cdef uint32_t func_number = self.builtin_to_number( func )
+        cdef uint32_t ts
+        cdef uint32_t func_number
+        if self.internal:
+            return
+        ts = self.timestamp()
+        func_number = self.builtin_to_number( func )
         self.calls.write_callinfo( 
             self.thread_id( frame ), 
             func_number, 
@@ -418,6 +427,8 @@ cdef class Profiler(object):
     cdef write_return( self, PyFrameObject frame ):
         """Write a return-from-call for the frame into the calls-file"""
         cdef uint32_t ts = self.timestamp()
+        if self.internal:
+            return
         self.calls.write_callinfo( 
             self.thread_id( frame ), 
             self.func_to_number( frame ), 
@@ -512,8 +523,11 @@ cdef class Profiler(object):
         lineno -- a 16-bit integer passed into the final record, whatever 
             arbitrary 16-bit value you would like to store.
         """
-        cdef uint32_t ts = self.timestamp()
-        cdef uint16_t thread = self.thread_to_number(PyThreadState_Get().thread_id)
+        cdef uint32_t ts
+        cdef uint16_t thread
+        self.internal = True
+        thread = self.thread_to_number(PyThreadState_Get().thread_id)
+        ts = self.timestamp()
         self.calls.write_callinfo(
             thread,
             self.annotation_to_number( annotation ),
@@ -521,6 +535,7 @@ cdef class Profiler(object):
             lineno,
             self.ANNOTATION_FLAGS,
         )
+        self.internal = False
 
 cdef bytes module_name( PyCFunctionObject func ):
     """Extract the module name from the function reference"""

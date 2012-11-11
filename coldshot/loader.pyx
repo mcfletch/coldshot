@@ -1,4 +1,4 @@
-"""Module providing a Numpy-based loader for coldshot profiles"""
+"""Module providing a loader for Coldshot profiles"""
 import os, urllib, sys, mmap, logging
 from . import profiler
 from coldshot.coldshot cimport *
@@ -94,9 +94,10 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                     log.error( "Unrecognized data-file type: %s %s", line[1], line[2] )
             elif line[0] == 'A':
                 # annotation added...
-                self.info.add_annotation( int(line[1]), line[2])
+                self.info.add_annotation( int(line[1]), self.unquote(line[2]))
         self.info.individual_calls = self.convert_individual_calls()
     def convert_individual_calls( self ):
+        """Convert the individual calls mapping into id-based mapping and add to info"""
         # Now need to convert anything which is name-based into ID-based references 
         result = set()
         for key in self.individual_calls:
@@ -113,17 +114,21 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                 result.add( key )
         return result 
     cdef uint16_t swap_16( self, uint16_t input ):
+        """Do a 16-bit integer endian swap"""
         if self.info.swapendian:
             return swap_16( input )
         return input 
     cdef uint32_t swap_32( self, uint32_t input ):
+        """Do a 32-bit integer endian swap"""
         if self.info.swapendian:
             return swap_32( input )
         return input
     cdef uint32_t extract_function( self, uint32_t input ):
+        """Extract function from packed input"""
         cdef uint32_t function_mask = 0x00ffffff
         return input & function_mask
     cdef uint32_t extract_flags( self, uint32_t input ):
+        """Extract flags from the packed input"""
         cdef uint32_t flag_mask = 0xff000000
         cdef uint32_t flag_shift = 24
         return (input & flag_mask) >> flag_shift
