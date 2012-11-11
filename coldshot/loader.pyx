@@ -13,10 +13,13 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
     
     Attributes of note:
     
-        files -- map ID: FileInfo objects 
-        file_names -- map filename: ID 
-        functions -- map ID: FunctionInfo objects 
-        function_names -- map function-name: ID
+        directory -- directory from which data is loaded
+        
+        index_filename -- filename from which the index was loaded
+        
+        call_files -- list of call files to load (defined in the index)
+        
+        info -- LoaderInfo instance populated by the loading process
     """
     cdef public object directory
     

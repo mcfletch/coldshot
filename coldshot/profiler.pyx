@@ -246,8 +246,10 @@ cdef class IndexWriter(object):
 cdef class Profiler(object):
     """Coldshot Profiler implementation 
     
-    Coldshot 
+    Profilers act as context managers for use with the ``with`` statement::
     
+        with Profiler( 'test.profile', lines=True ):
+            do_something()
     """
     cdef public dict files
     cdef public dict functions
@@ -295,6 +297,7 @@ cdef class Profiler(object):
         self.threads = {}
         self.active = False
         self.internal = False
+        self.internal_start = 0
         
         self.LINE_FLAGS = 0 << 24 # just for consistency
         self.CALL_FLAGS = 1 << 24
@@ -467,20 +470,26 @@ cdef class Profiler(object):
         return <uint32_t>delta
     
     def __enter__( self ):
-        """Start the Profiler on entry"""
+        """Start the Profiler on entry (with statement starts)"""
         self.start()
     def __exit__( self, type, value, traceback ):
-        """Stop the Profiler on exit"""
+        """Stop the Profiler on exit (with statement stops)"""
         self.stop()
     
     # External api
     def start( self ):
-        """Install this profiler as the trace function for the interpreter"""
+        """Install this profiler as the profile/trace function for the interpreter
+        
+        On calling start, the profiler will register a callback function such that 
+        we get callbacks which will emit events into the data-files.
+        """
         if self.active:
             return 
         self.active = True
         self.internal_discount = 0
-        self.internal_start = hpTimer()
+        # TODO: wrong, this will cause time to go backward!
+        ifself.internal_start == 0:
+            self.internal_start = hpTimer()
         PyEval_SetProfile(profile_callback, self)
         if self.lines:
             PyEval_SetTrace(trace_callback, self)
@@ -495,13 +504,24 @@ cdef class Profiler(object):
         self.flush()
     
     def flush( self ):
-        """Flush our results to disk"""
+        """Flush our results to disk
+        
+        This operation is not generally intended to be used by client code.
+        It allows code to ensure that all currently written events are flushed 
+        to the data-files.  :py:meth:`stop` will automatically flush the 
+        profiler results.
+        """
         self.index.flush()
         self.calls.flush()
     
     def close( self ):
-        """Close our files"""
-        self.flush()
+        """Close our files
+        
+        After closing all attempts to use the profiler will cause errors,
+        as attempts to write data will all fail.
+        """
+        if self.active:
+            self.stop()
         self.index.close()
         self.calls.close()
     
@@ -509,19 +529,21 @@ cdef class Profiler(object):
     def annotation( self, annotation, uint16_t lineno=0 ):
         """Set annotation id (edge-triggered)
         
-        annotation -- a hashable object to insert into the index and 
+        annotation -- a hashable object to insert into the index
+        
             assign a "function id" (24-bit integer space shared among 
             functions and annotations).  Should *not* be an integer or a 
             value which == an integer (float or the like).  All values 
             are converted to 8-bit strings, so if you need a structured 
             store, use e.g. json encoding and pass the 8-bit string for 
             reconstruction
-            
+
             None -- special indicator, will insert a function id of 0,
             which will be treated as an annotation-stack "pop" by readers.
         
-        lineno -- a 16-bit integer passed into the final record, whatever 
-            arbitrary 16-bit value you would like to store.
+        lineno -- a 16-bit integer passed into the final record
+        
+            whatever arbitrary 16-bit value you would like to store
         """
         cdef uint32_t ts
         cdef uint16_t thread

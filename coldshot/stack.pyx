@@ -6,14 +6,23 @@ cdef class LoaderInfo:
     """Summary of information loaded from a file
     
     functions -- id:FunctionInfo records
+    
     function_names -- (module,function_name): FunctionInfo records
+    
     files -- id:FileInfo records 
+    
     file_names -- name:FileInfo records
+    
     threads -- id:Stack records 
+    
     roots -- string_key:root_object records
+    
     modules -- id:ModuleInfo records
+    
     timer_unit -- fractional multiplier for raw time
+    
     bigendian -- whether the source file was written big-endian
+    
     swapendian -- whether we need to swap the endianness of records
     """
     def __cinit__( self ):
