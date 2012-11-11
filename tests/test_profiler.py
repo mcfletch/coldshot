@@ -120,3 +120,20 @@ class TestProfiler( TestCase ):
         this_key = ('tests.test_profiler','test_enter_exit')
         assert this_key in load.info.function_names, load.info.function_names
     
+    def test_annotation( self ):
+        self.profiler.annotation( 'hello' )
+        with self.profiler:
+            blah()
+            self.profiler.annotation( 'world' )
+            blah()
+            self.profiler.annotation( None )
+            blah()
+        self.profiler.close()
+        load = loader.Loader( self.test_dir )
+        load.load()
+        assert 'hello' in load.info.annotation_notes
+        assert 'world' in load.info.annotation_notes 
+        hello = load.info.annotation_notes['hello']
+        real_children = [ x for x in hello.children if x.function.name == 'blah' ]
+        assert len(real_children) == 1, hello.children
+        

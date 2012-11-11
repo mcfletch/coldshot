@@ -21,6 +21,8 @@ cdef class LoaderInfo:
         self.function_names = {}
         self.files = {}
         self.file_names = {}
+        self.annotations = {}
+        self.annotation_notes = {}
         self.threads = {}
         self.roots = {}
         self.modules = {}
@@ -77,7 +79,12 @@ cdef class LoaderInfo:
     def rows( self ):
         """Produce the set of all rows"""
         return self.functions.values()
-    
+    cdef Annotation add_annotation( self, uint32_t id, str raw ):
+        """Add an annotation to the information records"""
+        cdef Annotation note = Annotation( raw, raw, self )
+        self.annotations[id] = note
+        self.annotation_notes[raw] = note
+        return note
     cdef Grouping add_module( self, module_name, path ):
         """Add a module to our set of defined modules"""
         cdef list fragments 
@@ -159,6 +166,16 @@ cdef class Stack:
                     call_info.function.module, 
                     call_info.function.name 
                 )
+    cdef annotation( self, uint32_t id, uint32_t timestamp, uint16_t lineno ):
+        """Record a new annotation
+        
+        id -- annotation id
+        timestamp -- 32-bit timestamp,currently ignored
+        lineno -- line number (arbitrary data)
+        """
+        self.current_annotation = <Annotation>self.loader.annotations.get( id )
+        # TODO: needs to be configurable...
+        
     cdef push( self, FunctionInfo function_info, uint32_t timestamp, long index ):
         """Push a new record onto the function stack"""
         call_info = CallInfo( function_info, timestamp, index, self.thread )
@@ -167,6 +184,9 @@ cdef class Stack:
             self.individual_calls += 1
         if self.individual_calls:
             function_info.individual_calls.append( call_info )
+        # TODO: allow annotation to decide what to do with events...
+        if self.current_annotation is not None:
+            self.current_annotation.children.append( call_info )
     cdef pop( self, uint32_t timestamp, long index ):
         """Pop a single record from the stack at given timestamp"""
         cdef CallInfo call_info 
@@ -564,3 +584,7 @@ cdef class ModuleInfo( PackageInfo ):
         if parent:
             return [parent]
         return []
+
+cdef class Annotation( Grouping ):
+    """Grouping of calls/records with a given annotation"""
+    

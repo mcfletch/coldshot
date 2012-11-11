@@ -5,6 +5,8 @@ cdef class LoaderInfo:
     cdef public dict function_names 
     cdef public dict files 
     cdef public dict file_names
+    cdef public dict annotations
+    cdef public dict annotation_notes
     cdef public bint bigendian
     cdef public bint swapendian
     cdef public double timer_unit
@@ -15,6 +17,7 @@ cdef class LoaderInfo:
     
     cdef FileInfo add_file( self, filename, uint16_t fileno )
     cdef FunctionInfo add_function( self, FunctionInfo function )
+    cdef Annotation add_annotation( self, uint32_t id, str raw )
     cdef Stack add_thread( self, Stack stack )
     cdef object add_root( self, key, root )
     cdef Grouping add_module( self, module_name, path )
@@ -27,11 +30,13 @@ cdef class Stack:
     cdef public long context_switches
     cdef list function_stack
     cdef uint16_t individual_calls
+    cdef Annotation current_annotation
     
     cdef push( self, FunctionInfo function_info, uint32_t timestamp, long index )
     cdef pop( self, uint32_t timestamp, long index )
     cdef line( self, uint16_t line, uint32_t timestamp )
     cdef record_context_switch( self, uint32_t timestamp )
+    cdef annotation( self, uint32_t id, uint32_t timestamp, uint16_t lineno )
     cdef debug_stack( self )
 
 cdef class FunctionInfo:
@@ -110,3 +115,5 @@ cdef class ModuleInfo( PackageInfo ):
     cdef public object path
     cdef public object directory 
     cdef public object filename 
+cdef class Annotation( Grouping ):
+    pass

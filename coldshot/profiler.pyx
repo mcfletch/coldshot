@@ -22,6 +22,8 @@ cdef extern from 'Python.h':
     int PyTrace_CALL
     int PyTrace_RETURN
     int PyTrace_LINE
+    int PyTrace_EXCEPTION
+    int PyTrace_C_EXCEPTION
     
     ctypedef struct PyCodeObject:
         void * co_filename
@@ -34,6 +36,7 @@ cdef extern from 'Python.h':
     cdef void PyEval_SetProfile(Py_tracefunc func, object arg)
     cdef void PyEval_SetTrace(Py_tracefunc func, object arg)
     cdef char * PyString_AsString(bytes string)
+    cdef PyThreadState * PyThreadState_Get()
 
 cdef extern from 'pystate.h':
     object PyThreadState_GetDict()
@@ -74,9 +77,10 @@ __all__ = [
 ]
 
 def timer():
+    """Return the current high-resolution timer value"""
     return <long>hpTimer()
 
-cdef class DataWriter:
+cdef class DataWriter(object):
     """Object to write data to a raw FILE pointer"""
     cdef bint opened
     cdef bytes filename
@@ -228,7 +232,7 @@ cdef class IndexWriter(object):
         if not isinstance( description, str ):
             description = str( description )
         description = urllib.quote( description )
-        message = b'A %(funcno)d %(description)s'%locals()
+        message = b'A %(funcno)d %(description)s\n'%locals()
         self.fh.write( message )
     def flush( self ):
         """Flush our buffer"""
@@ -239,14 +243,11 @@ cdef class IndexWriter(object):
             self.should_close = False
             self.fh.close()
     
-cdef class Profiler:
+cdef class Profiler(object):
     """Coldshot Profiler implementation 
     
-    >>> import coldshot
-    >>> p = coldshot.Profiler( 'test.profile' )
-    >>> p.start()
-    ...
-    >>> p.stop()
+    Coldshot 
+    
     """
     cdef public dict files
     cdef public dict functions
@@ -261,8 +262,7 @@ cdef class Profiler:
     cdef uint32_t RETURN_FLAGS 
     cdef uint32_t CALL_FLAGS 
     cdef uint32_t LINE_FLAGS
-    cdef uint32_t ANNOTATION_PUSH_FLAGS
-    cdef uint32_t ANNOTATION_POP_FLAGS
+    cdef uint32_t ANNOTATION_FLAGS
     
     cdef int active
     cdef int lines
@@ -297,8 +297,7 @@ cdef class Profiler:
         self.LINE_FLAGS = 0 << 24 # just for consistency
         self.CALL_FLAGS = 1 << 24
         self.RETURN_FLAGS = 2 << 24
-        self.ANNOTATION_PUSH_FLAGS = 3 << 24
-        self.ANNOTATION_POP_FLAGS = 4 << 24
+        self.ANNOTATION_FLAGS = 3 << 24
         
     cdef uint32_t file_to_number( self, PyCodeObject code ):
         """Convert a code reference to a file number"""
@@ -376,9 +375,11 @@ cdef class Profiler:
     cdef uint16_t thread_id( self, PyFrameObject frame ):
         """Extract thread_id and convert to a 16-bit integer..."""
         cdef long id 
-        cdef uint16_t count
+        return self.thread_to_number( <long>frame.f_tstate.thread_id )
+    cdef uint16_t thread_to_number( self, long id ):
+        """Convert a thread id to a 16-bit integer"""
         cdef object count_obj
-        id = <long>frame.f_tstate.thread_id
+        cdef uint16_t count
         count_obj = self.threads.get( id )
         if count_obj is None:
             count = len(self.threads) + 1
@@ -448,9 +449,10 @@ cdef class Profiler:
         not).
         """
         cdef PY_LONG_LONG delta
+        cdef uint32_t mask
         cdef PY_LONG_LONG current = hpTimer()
         delta = current - self.internal_start - self.internal_discount
-        #delta = delta & 0xffffffff
+        #delta = delta & mask
         return <uint32_t>delta
     
     def __enter__( self ):
@@ -492,33 +494,33 @@ cdef class Profiler:
         self.index.close()
         self.calls.close()
     
-#    # possible API
-#    def set_annotation( self, annotation, uint16_t lineno=0 ):
-#        """Set annotation id (edge-triggered)
-#        
-#        annotation -- a hashable object to insert into the index and 
-#            assign a "function id" (24-bit integer space shared among 
-#            functions and annotations).  Should *not* be an integer or a 
-#            value which == an integer (float or the like).  All values 
-#            are converted to 8-bit strings, so if you need a structured 
-#            store, use e.g. json encoding and pass the 8-bit string for 
-#            reconstruction
-#            
-#            None -- special indicator, will insert a function id of 0,
-#            which will be treated as an annotation-stack "pop" by readers.
-#        
-#        lineno -- a 16-bit integer passed into the final record, whatever 
-#            arbitrary 16-bit value you would like to store.
-#        """
-#        cdef uint32_t ts = self.timestamp()
-#        cdef uint16_t thread.get_ident()
-#        self.calls.write_callinfo(
-#            self.thread_id( frame ), 
-#            self.annotation_to_number( annotation ), 
-#            ts,
-#            lineno,
-#            self.ANNOTATION_FLAGS,
-#        )
+    # possible API
+    def annotation( self, annotation, uint16_t lineno=0 ):
+        """Set annotation id (edge-triggered)
+        
+        annotation -- a hashable object to insert into the index and 
+            assign a "function id" (24-bit integer space shared among 
+            functions and annotations).  Should *not* be an integer or a 
+            value which == an integer (float or the like).  All values 
+            are converted to 8-bit strings, so if you need a structured 
+            store, use e.g. json encoding and pass the 8-bit string for 
+            reconstruction
+            
+            None -- special indicator, will insert a function id of 0,
+            which will be treated as an annotation-stack "pop" by readers.
+        
+        lineno -- a 16-bit integer passed into the final record, whatever 
+            arbitrary 16-bit value you would like to store.
+        """
+        cdef uint32_t ts = self.timestamp()
+        cdef uint16_t thread = self.thread_to_number(PyThreadState_Get().thread_id)
+        self.calls.write_callinfo(
+            thread,
+            self.annotation_to_number( annotation ),
+            ts,
+            lineno,
+            self.ANNOTATION_FLAGS,
+        )
 
 cdef bytes module_name( PyCFunctionObject func ):
     """Extract the module name from the function reference"""
@@ -573,6 +575,8 @@ cdef int profile_callback(
     elif what == PyTrace_C_CALL:
         if PyCFunction_Check( arg ):
             profiler.write_c_call( frame[0], <PyCFunctionObject *>arg )
+#    elif what == PyTrace_EXCEPTION or what == PyTrace_C_EXCEPTION:
+#        pass #profiler.write_exception( 
     elif what == PyTrace_RETURN or what == PyTrace_C_RETURN:
         profiler.write_return( frame[0] )
     return 0

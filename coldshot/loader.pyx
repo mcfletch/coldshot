@@ -92,6 +92,9 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                     self.call_files.append( line[2] )
                 else:
                     log.error( "Unrecognized data-file type: %s %s", line[1], line[2] )
+            elif line[0] == 'A':
+                # annotation added...
+                self.info.add_annotation( int(line[1]), line[2])
         self.info.individual_calls = self.convert_individual_calls()
     def convert_individual_calls( self ):
         # Now need to convert anything which is name-based into ID-based references 
@@ -201,6 +204,8 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
                 stack.pop( timestamp, i )
             elif flags == 0: # line...
                 stack.line( line, timestamp )
+            elif flags == 3: # annotation
+                stack.annotation( function, timestamp, line )
         # root needs to finalize...
         root.last_timestamp = highest_ts
         root.first_timestamp = lowest_ts 
