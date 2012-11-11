@@ -1,6 +1,4 @@
 from coldshot import profile
-import pdb 
-pdb.set_trace()
 
 def a():
     for i in range( 8 ):
