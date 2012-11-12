@@ -40,7 +40,7 @@ class TestLoaderBase( TestCase ):
 class TestLoader( TestLoaderBase ):
         
     def test_cumulative( self ):
-        root = self.loader.info.roots['calls']
+        root = self.loader.info.roots['functions']
         cumulative = root.cumulative
         local = root.local
         assert cumulative, root.time
@@ -62,9 +62,10 @@ class TestLoader( TestLoaderBase ):
         assert len( root.children ) == 2, root.children
     
     def test_module_rows( self ):
-        rows = self.loader.info.location_rows()
+        self.loader.info.finalize_modules()
+        rows = self.loader.info.modules
         time= rows['time']
-        assert .004 < time.cumulative < .005, """Expect better resolution than .001"""
+        assert .004 < time.cumulative < .005, ("""Expect better resolution than .001""",time.cumulative)
         for row in rows.values():
             row.empty # testing accessing it...
             if row.key != '':

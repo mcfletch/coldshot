@@ -169,7 +169,7 @@ cdef public class Loader [object Coldshot_Loader, type Coldshot_Loader_Type ]:
 
         # Canonical state storage...
         cdef dict stacks = {}
-        cdef FunctionInfo root = self.info.roots[ 'calls' ]
+        cdef FunctionInfo root = self.info.roots[ 'functions' ]
         
         # The source data...
         cdef EventsFile calls_data = EventsFile( calls_filename )

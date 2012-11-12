@@ -47,14 +47,14 @@ cdef class LoaderInfo:
         self.bigendian = False 
         self.swapendian = False
         
-        self.add_function(self.add_root( 'calls', FunctionInfo( 
+        self.add_function(self.add_root( 'functions', FunctionInfo( 
             0xffffffff, '*', '*',
             self.files[0],
             0,
             self
         )))
         module_root = PackageInfo( '', self )
-        self.add_root( 'modules', module_root )
+        self.add_root( 'location', module_root )
         self.modules[''] = module_root
         
     cdef FileInfo add_file( self, filename, uint16_t fileno ):
@@ -119,22 +119,11 @@ cdef class LoaderInfo:
                     last.children.append( current )
             last = current 
         return current
-    def function_rows( self ):
-        """Get cProfile-like function metadata rows
-        
-        returns an ID: function mapping
-        """
-        return self.functions
-    def location_rows( self ):
-        """Get our location records (finalized)
-        
-        returns an module-name: Grouping mapping
-        """
+    def finalize_modules( self ):
         result = self.modules.items()
         result.sort(reverse=True)
         for key,module in result:
             module.calculate_totals()
-        return self.modules
 
 cdef class Stack:
     """Stack builds models of the run-time functions during loading (for a single thread)
