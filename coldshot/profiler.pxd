@@ -95,10 +95,11 @@ cdef class Profiler(object):
     cdef write_line( self, PyFrameObject frame )
     cdef public uint32_t timestamp( self )
 
-
-cdef class ThreadExtractor( object ):
+cdef class Extractor( object ):
     cdef dict members 
     cdef long new_id( self, object key )
+
+cdef class ThreadExtractor( Extractor ):
     cdef uint16_t extract( self, PyFrameObject frame, Profiler profiler )
 
 cdef class DataWriter(object):
