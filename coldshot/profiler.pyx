@@ -177,19 +177,21 @@ cdef class IndexWriter(object):
             self.fh.close()
 
 cdef class ThreadExtractor( object ):
-    """Replacable object providing extraction of values to record"""
+    """Replacable object providing extraction of values to record
+    
+    ThreadExtractor is an abstraction point that allows for using non-thread 
+    IDs in the "thread" member of profiles.  In a non-threaded environment, this 
+    would allow for e.g. setting "green thread ID" or "uthread id".
+    """
     def __cinit__( self ):
         self.members = {}
-    cdef uint16_t new_id( self, object key ):
+    cdef long new_id( self, object key ):
         """Calculate new id for the given key"""
-        cdef object count_obj
-        cdef uint16_t count
-        count_obj = self.members.get( key )
-        if count_obj is None:
+        cdef object count
+        count = self.members.get( key )
+        if count is None:
             count = len(self.members) + 1
-            self.members[key] = count 
-        else:
-            count = <uint16_t>count_obj
+            self.members[key] = count
         return count
     cdef uint16_t extract( self, PyFrameObject frame, Profiler profiler ):
         """Extract and return a 16-bit integer for the "thread" value

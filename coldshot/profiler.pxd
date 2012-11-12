@@ -98,7 +98,7 @@ cdef class Profiler(object):
 
 cdef class ThreadExtractor( object ):
     cdef dict members 
-    cdef uint16_t new_id( self, object key )
+    cdef long new_id( self, object key )
     cdef uint16_t extract( self, PyFrameObject frame, Profiler profiler )
 
 cdef class DataWriter(object):
