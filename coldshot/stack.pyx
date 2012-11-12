@@ -5,25 +5,27 @@ log = logging.getLogger( __name__ )
 cdef class LoaderInfo:
     """Summary of information loaded from a file
     
-    functions -- id:FunctionInfo records
+    Attributes:
     
-    function_names -- (module,function_name): FunctionInfo records
-    
-    files -- id:FileInfo records 
-    
-    file_names -- name:FileInfo records
-    
-    threads -- id:Stack records 
-    
-    roots -- string_key:root_object records
-    
-    modules -- id:ModuleInfo records
-    
-    timer_unit -- fractional multiplier for raw time
-    
-    bigendian -- whether the source file was written big-endian
-    
-    swapendian -- whether we need to swap the endianness of records
+        functions -- id:FunctionInfo records
+        
+        function_names -- (module,function_name): FunctionInfo records
+        
+        files -- id:FileInfo records 
+        
+        file_names -- name:FileInfo records
+        
+        threads -- id:Stack records 
+        
+        roots -- string_key:root_object records
+        
+        modules -- id:ModuleInfo records
+        
+        timer_unit -- fractional multiplier for raw time
+        
+        bigendian -- whether the source file was written big-endian
+        
+        swapendian -- whether we need to swap the endianness of records
     """
     def __cinit__( self ):
         self.functions = {}
@@ -140,9 +142,13 @@ cdef class Stack:
     Attributes:
     
         thread -- 16-bit thread id
+        
         loader -- LoaderInfo object
+        
         start -- 32-bit timestamp for first event in the thread
+        
         stop -- 32-bit timestamp for the last event in the thread
+        
         context_switches -- counter of the number of context switches observed
     
     TODO: need to have "children" for the stack (thread) to show us what was run 
@@ -178,9 +184,13 @@ cdef class Stack:
     cdef annotation( self, uint32_t id, uint32_t timestamp, uint16_t lineno ):
         """Record a new annotation
         
-        id -- annotation id
-        timestamp -- 32-bit timestamp,currently ignored
-        lineno -- line number (arbitrary data)
+        Attributes:
+        
+            id -- annotation id
+            
+            timestamp -- 32-bit timestamp,currently ignored
+            
+            lineno -- line number (arbitrary data)
         """
         self.current_annotation = <Annotation>self.loader.annotations.get( id )
         # TODO: needs to be configurable...
@@ -219,7 +229,7 @@ cdef class Stack:
         """Record a line event into the stack trace"""
         cdef CallInfo call_info = self.function_stack[-1]
         return call_info.record_line( line, timestamp )
-    
+
 cdef class FileInfo:
     """Referenced by functions which declare the same file
     
@@ -237,22 +247,32 @@ cdef class FileInfo:
 cdef class FunctionInfo:
     """Represents call/trace information for a single function
     
-    Attributes of note:
+    Attributes:
     
         key -- ID/Key used in the trace to identify this function
+        
         module -- name of the module and class (x.y.z)
+        
         name -- name of the function/method
+        
         file -- FileInfo for the module, note: builtins all use the same FileInfo
+        
         line -- line on which the function begins 
+        
         loader -- reference to the loader which created us...
         
         calls -- count of calls on the function 
+        
         time -- cumulative time spent in the function
+        
         child_time -- cumulative time spent in children
+        
         line_map -- line: FunctionLineInfo mapping for each line executed
+        
         child_map -- child_id: cumulative-time for each called child...
         
         first_timestamp -- timestamp of the first call to the function
+        
         last_timestamp -- timestamp of the last call to the function
     
     All times/timestamps are stored in the original profiler units.
