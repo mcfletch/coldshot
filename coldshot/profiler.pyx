@@ -5,68 +5,6 @@ import urllib, os, weakref, sys, logging
 from coldshot cimport *
 log = logging.getLogger( __name__ )
 
-cdef extern from "frameobject.h":
-    ctypedef int (*Py_tracefunc)(object self, PyFrameObject *py_frame, int what, object arg)
-
-cdef extern from "stdio.h":
-    ctypedef void FILE
-    FILE *fopen(char *path, char *mode)
-    size_t fwrite(void *ptr, size_t size, size_t nmemb, FILE *stream)
-    int fclose(FILE *fp)
-    int fflush(FILE *fp)
-
-cdef extern from 'Python.h':
-    # TODO: need to add c-call and c-return..
-    int PyTrace_C_CALL
-    int PyTrace_C_RETURN
-    int PyTrace_CALL
-    int PyTrace_RETURN
-    int PyTrace_LINE
-    int PyTrace_EXCEPTION
-    int PyTrace_C_EXCEPTION
-    
-    ctypedef struct PyCodeObject:
-        void * co_filename
-        void * co_name
-        int co_firstlineno
-    
-    ctypedef struct PyThreadState:
-        long thread_id
-    
-    cdef void PyEval_SetProfile(Py_tracefunc func, object arg)
-    cdef void PyEval_SetTrace(Py_tracefunc func, object arg)
-    cdef char * PyString_AsString(bytes string)
-    cdef PyThreadState * PyThreadState_Get()
-
-cdef extern from 'pystate.h':
-    object PyThreadState_GetDict()
-    
-cdef extern from 'methodobject.h':
-    ctypedef struct PyMethodDef:
-        char  *ml_name
-    ctypedef struct PyCFunctionObject:
-        PyMethodDef * m_ml
-        void * m_self
-        void * m_module
-    cdef int PyCFunction_Check(object op)
-    
-cdef extern from 'frameobject.h':
-    ctypedef struct PyFrameObject:
-        PyCodeObject *f_code
-        PyThreadState *f_tstate
-        PyFrameObject *f_back
-        void * f_globals
-        int f_lineno
-
-# timers, from line_profiler
-cdef extern from "timers.h":
-    PY_LONG_LONG hpTimer()
-    double hpTimerUnit()
-
-# pretty much the same code as line-profiler
-cdef extern from 'lowlevel.h':
-    void coldshot_unset_trace()
-    void coldshot_unset_profile()
 
 CALL_INFO_SIZE = sizeof( event_info )
 TIMER_UNIT = hpTimerUnit()
@@ -82,9 +20,6 @@ def timer():
 
 cdef class DataWriter(object):
     """Object to write data to a raw FILE pointer"""
-    cdef bint opened
-    cdef bytes filename
-    cdef FILE * fd 
     def __cinit__( self, filename not None ):
         if isinstance( filename, unicode ):
             filename = filename.encode( 'utf-8' )
@@ -190,8 +125,6 @@ cdef class IndexWriter(object):
         
         strings are written in urllib.quote()'d form
     """
-    cdef object fh
-    cdef bint should_close # note: means "we should close it", not "has been opened"
     def __init__( self, file ):
         """Open the IndexWriter
         
@@ -245,7 +178,6 @@ cdef class IndexWriter(object):
 
 cdef class ThreadExtractor( object ):
     """Replacable object providing extraction of values to record"""
-    cdef dict members 
     def __cinit__( self ):
         self.members = {}
     cdef uint16_t new_id( self, object key ):
@@ -275,34 +207,28 @@ cdef class Profiler(object):
         with Profiler( 'test.profile', lines=True ):
             do_something()
     """
-    cdef public dict files
-    cdef public dict functions
-    
-    cdef public IndexWriter index
-    cdef public DataWriter calls
-    cdef public ThreadExtractor threads
-    
-    cdef public PY_LONG_LONG internal_start
-    cdef public PY_LONG_LONG internal_discount
-    
-    cdef uint32_t RETURN_FLAGS 
-    cdef uint32_t CALL_FLAGS 
-    cdef uint32_t LINE_FLAGS
-    cdef uint32_t ANNOTATION_FLAGS
-    
-    cdef bint active
-    cdef bint lines
-    cdef bint internal
-    
     INDEX_FILENAME = b'index.coldshot'
     CALLS_FILENAME = b'coldshot.data'
     
-    def __init__( self, dirname, lines=True, version=1 ):
+    def __init__( self, dirname, lines=True, version=1, thread_extractor=None ):
         """Initialize the profiler (and open all files)
         
         dirname -- directory in which to record profiles 
         
         lines -- if True, write line traces (default is True)
+        
+        thread_extractor -- if provided, thread extractor for all events 
+        
+            This object must be an instance of ThreadExtractor, and should 
+            (read must) be implemented in C/Cython to provide acceptable 
+            performance.
+            
+            The primary purpose of passing in this object is to allow for 
+            creating e.g. micro-thread or similar thread IDs instead of pthread 
+            IDs.
+            
+            ``thread_extractor.extract( PyFrameObject ) -> uint16_t id ``
+            ``thread_extractor.new_id( thread_id ) -> uint16_t id``
         
         version -- file-format version to write
         """
@@ -320,7 +246,10 @@ cdef class Profiler(object):
         
         self.files = {}
         self.functions = {}
-        self.threads = ThreadExtractor()
+        if thread_extractor is not None:
+            self.threads = thread_extractor
+        else:
+            self.threads = ThreadExtractor()
         self.active = False
         self.internal = False
         self.internal_start = 0
