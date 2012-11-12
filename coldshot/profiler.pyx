@@ -242,7 +242,31 @@ cdef class IndexWriter(object):
         if self.should_close:
             self.should_close = False
             self.fh.close()
-    
+
+cdef class ThreadExtractor( object ):
+    """Replacable object providing extraction of values to record"""
+    cdef dict members 
+    def __cinit__( self ):
+        self.members = {}
+    cdef uint16_t new_id( self, object key ):
+        """Calculate new id for the given key"""
+        cdef object count_obj
+        cdef uint16_t count
+        count_obj = self.members.get( key )
+        if count_obj is None:
+            count = len(self.members) + 1
+            self.members[key] = count 
+        else:
+            count = <uint16_t>count_obj
+        return count
+    cdef uint16_t extract( self, PyFrameObject frame, Profiler profiler ):
+        """Extract and return a 16-bit integer for the "thread" value
+        
+        This is the publicly accessible API called to retrieve the value 
+        for a "Thread ID"
+        """
+        return self.new_id( <long>(frame.f_tstate.thread_id) )
+
 cdef class Profiler(object):
     """Coldshot Profiler implementation 
     
@@ -253,10 +277,10 @@ cdef class Profiler(object):
     """
     cdef public dict files
     cdef public dict functions
-    cdef public dict threads
     
     cdef public IndexWriter index
     cdef public DataWriter calls
+    cdef public ThreadExtractor threads
     
     cdef public PY_LONG_LONG internal_start
     cdef public PY_LONG_LONG internal_discount
@@ -296,7 +320,7 @@ cdef class Profiler(object):
         
         self.files = {}
         self.functions = {}
-        self.threads = {}
+        self.threads = ThreadExtractor()
         self.active = False
         self.internal = False
         self.internal_start = 0
@@ -330,6 +354,10 @@ cdef class Profiler(object):
             self.functions[key] = count
             self.index.write_annotation( count, key )
         return count
+    
+    cdef uint16_t thread_id( self, PyFrameObject frame ):
+        """Just an indirection point for temporary testing"""
+        return self.threads.extract( frame, self )
         
     cdef uint32_t func_to_number( self, PyFrameObject frame ):
         """Convert a function reference to a persistent function ID"""
@@ -376,21 +404,6 @@ cdef class Profiler(object):
             count = len(self.functions) + 1
             self.functions[id] = count
             self.index.write_func( count, 0, 0, module, name )
-        else:
-            count = <long>count_obj
-        return count
-    cdef uint16_t thread_id( self, PyFrameObject frame ):
-        """Extract thread_id and convert to a 16-bit integer..."""
-        cdef long id 
-        return self.thread_to_number( <long>frame.f_tstate.thread_id )
-    cdef uint16_t thread_to_number( self, long id ):
-        """Convert a thread id to a 16-bit integer"""
-        cdef object count_obj
-        cdef uint16_t count
-        count_obj = self.threads.get( id )
-        if count_obj is None:
-            count = len(self.threads) + 1
-            self.threads[id] = count 
         else:
             count = <long>count_obj
         return count
@@ -550,7 +563,7 @@ cdef class Profiler(object):
         cdef uint32_t ts
         cdef uint16_t thread
         self.internal = True
-        thread = self.thread_to_number(PyThreadState_Get().thread_id)
+        thread = self.threads.new_id(PyThreadState_Get().thread_id)
         ts = self.timestamp()
         self.calls.write_callinfo(
             thread,
