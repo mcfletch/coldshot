@@ -1,4 +1,4 @@
-"""Coldshot, a Hotshot-like profiler implementation in Cython
+"""Coldshot Profiler implementation
 """
 from cpython cimport PY_LONG_LONG
 import os, weakref, sys, logging
@@ -184,6 +184,7 @@ cdef class IndexWriter(object):
             self.fh.close()
 
 cdef class Extractor( object ):
+    """Extractors are objects which are used to extract data-points at run-time"""
     def __cinit__( self ):
         self.members = {}
     cdef long new_id( self, object key ):

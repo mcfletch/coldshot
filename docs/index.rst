@@ -57,6 +57,7 @@ Contents
    coldshot.profiler
    coldshot.loader
    coldshot.stack
+   coldshot.eventsfile
 
 Indices and tables
 ==================

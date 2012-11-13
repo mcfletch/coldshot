@@ -2,13 +2,27 @@
 
 Provides the mechanisms required to get a pointer into a set of structures 
 stored on disk which describe the events observed by the Profiler.
+
+A MappedFile instance allows you to iterate over the (native endian) records 
+stored in a given ``coldshot.data``.
+
+.. code:: python
+
+    m = MappedFile( filename )
+    for record in m:
+        print(m)
 """
 import os, mmap, logging
 from coldshot cimport event_info, mmap_object, uint16_t, uint32_t
 log = logging.getLogger( __name__ )
 
 cdef class MappedFile:
-    """Memory-mapped file used for scanning large data-files"""
+    """Memory-mapped file used for scanning large data-files
+    
+    Each MappedFile sub-class has a particular record-type associated with the 
+    data-pointer.  That record-type determines what will be produced by the 
+    iterator for the file.
+    """
     def __cinit__( self, filename ):
         self.filename = filename
         self.fh = open( filename, 'rb' )
@@ -16,12 +30,27 @@ cdef class MappedFile:
         self.mm = mmap.mmap( self.fh.fileno(), self.filesize, prot=mmap.PROT_READ )
         self.get_pointer( self.mm )
     def close( self ):
+        """Close our memory map and file handle"""
         self.mm.close()
         self.fh.close()
     
 cdef class EventsFile(MappedFile):
-    """Particular mapped file which loads our eventsfile data-structures"""
+    """Particular mapped file which loads our event_info data-structure
+    
+    The result of iteration is a set of dictionaries with the following 
+    field
+    
+        thread -- 16-bit thread identifier 
+        line -- 16-bit line identifier 
+        function -- 24-bit function identifier 
+        timestamp -- 24-bit timestamp (offset from profile start)
+        flags -- 8-bit flag indicating event type
+    
+    See ``coldshot-events`` command-line script for an interface for 
+    viewing subset of events.
+    """
     def get_pointer( self, mm ):
+        """Retrieve our data-pointer"""
         cdef mmap_object * c_level
         c_level = <mmap_object *>mm
         self.records = <event_info *>(c_level[0].data)
