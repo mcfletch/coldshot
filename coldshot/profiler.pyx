@@ -1,10 +1,13 @@
 """Coldshot, a Hotshot-like profiler implementation in Cython
 """
 from cpython cimport PY_LONG_LONG
-import urllib, os, weakref, sys, logging
+import os, weakref, sys, logging
+try:
+    from urllib import parse as urllib
+except ImportError as error:
+    import urllib
 from coldshot cimport *
 log = logging.getLogger( __name__ )
-
 
 CALL_INFO_SIZE = sizeof( event_info )
 TIMER_UNIT = hpTimerUnit()
@@ -12,6 +15,10 @@ TIMER_UNIT = hpTimerUnit()
 __all__ = [
     'timer',
     'Profiler',
+    'Extractor',
+    'ThreadExtractor',
+    'DataWriter',
+    'IndexWriter',
 ]
 
 def timer():
@@ -139,34 +146,34 @@ cdef class IndexWriter(object):
             self.should_close = False
     def prefix( self, version=1 ):
         """Write our version prefix to the data-file"""
-        message = b'P COLDSHOTBinary version=%d bigendian=%s timer_unit=%f\n'%( 
+        message = 'P COLDSHOTBinary version=%d bigendian=%s timer_unit=%f\n'%( 
             version, sys.byteorder=='big', 
             TIMER_UNIT 
         )
-        self.fh.write( message )
+        self.fh.write( message.encode('utf-8') )
     def write_datafile( self, datafile, type='calls' ):
         """Record the presence of a data-file to be parsed"""
         datafile = urllib.quote( datafile )
-        message = b'D %(type)s %(datafile)s\n'%locals()
-        self.fh.write( message )
+        message = 'D %(type)s %(datafile)s\n'%locals()
+        self.fh.write( message.encode('utf-8') )
     def write_file( self, fileno, filename ):
         """Record presence of a source file and its identifier"""
-        message = b'F %d %s\n'%( fileno, urllib.quote( filename ))
-        self.fh.write( message )
+        message = 'F %d %s\n'%( fileno, urllib.quote( filename ))
+        self.fh.write( message.encode('utf-8') )
     def write_func( self, funcno, fileno, lineno, bytes module, bytes name ):
         """Record presence of function and function id into the index"""
         name = urllib.quote( name )
         module = urllib.quote( module )
-        message = b'f %(funcno)d %(fileno)d %(lineno)d %(module)s %(name)s\n'%locals()
-        self.fh.write( message )
+        message = 'f %(funcno)d %(fileno)d %(lineno)d %(module)s %(name)s\n'%locals()
+        self.fh.write( message.encode('utf-8') )
     def write_annotation( self, funcno, description ):
         if isinstance( description, unicode ):
             description = description.encode( 'utf-8' )
         if not isinstance( description, str ):
             description = str( description )
         description = urllib.quote( description )
-        message = b'A %(funcno)d %(description)s\n'%locals()
-        self.fh.write( message )
+        message = 'A %(funcno)d %(description)s\n'%locals()
+        self.fh.write( message.encode('utf-8') )
     def flush( self ):
         """Flush our buffer"""
         self.fh.flush()

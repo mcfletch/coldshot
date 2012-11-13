@@ -1,7 +1,9 @@
 Coldshot Tracing Profiler for Python
 ====================================
 
-Coldshot is a tracing profiler for use with CPython.
+Coldshot is a tracing profiler for use with CPython 2.x
+Coldshot records each call, return and line event into a data-file and relies on tools to reconstruct the events into a picture of the run.
+The primary tool used to view Coldshot profiles is RunSnakeRun.
 
 Command-line Usage
 ----------------------------
@@ -11,8 +13,13 @@ Command-line Usage
     $> coldshot --lines -o test.profile path/to/script.py argument1 argument2
 
 Will produce a directory named ``test.profile`` into with a (potentially very large)
-set of data files.  These data files are loadable  with the RunSnakeRun visualizer, or 
-may be viewed with built-in basic report functionality:
+set of data files.  These data files are loadable  with the RunSnakeRun visualizer using:
+
+.. code:: bash
+
+    $> runsnake test.profile
+
+Or they may be viewed with built-in basic report functionality:
 
 .. code:: bash 
 
@@ -40,9 +47,9 @@ Loading Profiles Programatically
     
     for function in info.funtions.values():
         print function.module,function.name, function.cumulative
-
         
-Contents:
+Contents
+------------
  
 .. toctree::
    :maxdepth: 2

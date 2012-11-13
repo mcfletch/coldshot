@@ -1,5 +1,9 @@
 """Module providing a loader for Coldshot profiles"""
-import os, urllib, sys, mmap, logging
+import os, sys, mmap, logging
+try:
+    from urllib import parse as urllib
+except ImportError as error:
+    import urllib
 from . import profiler
 from coldshot.coldshot cimport *
 from coldshot.eventsfile cimport *

@@ -215,12 +215,11 @@ cdef class Stack:
             # child is current_function...
             call_info.record_stop_child( child_delta, current_function )
     
-    cdef line( self, FunctionInfo function_info, uint32_t timestamp, uint16_t line )
+    cdef line( self, FunctionInfo function_info, uint32_t timestamp, uint16_t line ):
         """Record a line event into the stack trace"""
         cdef CallInfo call_info = self.function_stack[-1]
         if call_info.function.key == function_info.key:
             return call_info.record_line( line, timestamp )
-        # do something useful
 
 cdef class FileInfo:
     """Referenced by functions which declare the same file

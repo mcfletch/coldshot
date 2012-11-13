@@ -2,6 +2,16 @@
 from . import profiler, loader, reporter, eventsfile
 import tempfile, atexit, sys
 from optparse import OptionParser
+try:
+    unicode 
+except NameError:
+    unicode = str 
+else:
+    bytes = str
+def as_8_bit( u ):
+    if isinstance( u, unicode ):
+        return u.encode( 'utf-8' )
+    return u
 
 __all__ = ('run','runctx')
 
@@ -45,11 +55,11 @@ def runctx( code, globals=None, locals=None, prof_dir=None, lines=False ):
         globals = {}
     if locals is None:
         locals = globals 
-    prof = profiler.Profiler( prof_dir, lines=lines )
+    prof = profiler.Profiler( as_8_bit(prof_dir), lines=lines )
     atexit.register( prof.stop )
     prof.start()
     try:
-        exec code in globals, locals
+        exec( code, globals, locals )
     finally:
         prof.stop()
     return prof
@@ -112,7 +122,7 @@ def report_main():
     load = loader.Loader( sys.argv[1] )
     load.load()
     report = reporter.Reporter( load )
-    print report.report()
+    print( report.report() )
     return 0
 
 def raw_options():
@@ -149,7 +159,7 @@ def raw_events_main():
     for line in scanner[options.start:(options.stop or scanner.record_count)]:
         if line['flags'] == 1:
             depth += 1
-        print '%s%s'%( ' '*depth,line )
+        print( '%s%s'%( ' '*depth,line ) )
         if line['flags'] == 2:
             depth -= 1
         if depth < 0:
