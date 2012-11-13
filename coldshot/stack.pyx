@@ -139,6 +139,14 @@ cdef class Stack:
         stop -- 32-bit timestamp for the last event in the thread
         
         context_switches -- counter of the number of context switches observed
+        
+        function_stack -- list of CallInfo records currently on the stack
+        
+            the stack *should* be empty when the stack has been loaded
+            
+        current_annotation -- Annotation record (or None)
+        
+        
     
     TODO: need to have "children" for the stack (thread) to show us what was run 
     during the thread
@@ -226,6 +234,16 @@ cdef class FileInfo:
     
     All built-in functions currently declare the same file number (0), so all 
     built-ins will appear to come from a single file.
+    
+    Attributes:
+    
+        path -- full path 
+        
+        filename -- basename of path
+        
+        directory -- directory of path 
+        
+        fileno -- internal identifier for the file
     """
     def __init__( self, path, fileno ):
         self.path = path
@@ -560,7 +578,26 @@ cdef class Grouping:
         )
     
 cdef class PackageInfo( Grouping ):
-    """Set of modules"""
+    """Python package (collection of modules/packages)
+    
+    Attributes:
+    
+        key -- module name (dotted name)
+        
+        name -- module name 
+        
+        children -- list of children 
+        
+        loader -- :py:class:`LoaderInfo` 
+        
+        calls -- number of calls (sum)
+        
+        cumulative/cumulativePer -- amount of time (sum of function localtime)
+        
+        empty -- fraction of time in local (always 0)
+        
+        local/localPer -- time in local (always 0)
+    """
     def __init__( self, str module, LoaderInfo loader ):
         if module:
             name = module
@@ -583,6 +620,30 @@ cdef class ModuleInfo( PackageInfo ):
     
     Only function-local time is included in cumulative, so the result is that 
     the text-of-the-module is what is represented into the representation.
+    
+    Attributes: 
+    
+        path -- full path to the module 
+        
+        directory -- directory of the path 
+        
+        filename -- basename of the path 
+        
+        key -- module name (dotted name)
+        
+        name -- module name 
+        
+        children -- list of children 
+        
+        loader -- :py:class:`LoaderInfo` 
+        
+        calls -- number of calls (sum)
+        
+        cumulative/cumulativePer -- amount of time (sum of function localtime)
+        
+        empty -- fraction of time in local (always 0)
+        
+        local/localPer -- time in local (always 0)
     """
     def __init__( self, str module, str path, LoaderInfo loader ):
         self.path = path 
@@ -599,7 +660,7 @@ cdef class ModuleInfo( PackageInfo ):
         self.calls = sum( [x.calls for x in self.children], 0 )
     @property 
     def parents( self ):
-        """Only ever one parent for a module"""
+        """Retrieve the parent of this module (either our package, root, or nothing)"""
         if not self.key:
             return []
         name = '.'.join( self.key.split('.')[:-1])
