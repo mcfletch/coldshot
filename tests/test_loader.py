@@ -4,6 +4,7 @@ import tempfile, os, shutil, time
 
 def first_level():
     second_level()
+    # hello
     second_level()
 def second_level():
     third_level()
@@ -72,6 +73,11 @@ class TestLoader( TestLoaderBase ):
                 assert row.parents 
             else:
                 assert not row.parents
+    def test_function_line_numbers( self ):
+        function= self.loader.info.function_names[ self.first_key ]
+        assert len(function.line_map) == 3, function.line_map
+        for key,value in function.line_map.items():
+            assert value.line == key, (value.line,key)
 
 class TestLoaderIndividual( TestLoaderBase ):
     def create_loader( self ):

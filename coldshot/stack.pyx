@@ -214,10 +214,13 @@ cdef class Stack:
             call_info = self.function_stack[-1]
             # child is current_function...
             call_info.record_stop_child( child_delta, current_function )
-    cdef line( self, uint16_t line, uint32_t timestamp ):
+    
+    cdef line( self, FunctionInfo function_info, uint32_t timestamp, uint16_t line )
         """Record a line event into the stack trace"""
         cdef CallInfo call_info = self.function_stack[-1]
-        return call_info.record_line( line, timestamp )
+        if call_info.function.key == function_info.key:
+            return call_info.record_line( line, timestamp )
+        # do something useful
 
 cdef class FileInfo:
     """Referenced by functions which declare the same file
@@ -342,8 +345,11 @@ cdef class FunctionInfo:
         return [x[1] for x in self.sorted_children]
     def child_cumulative_time( self, other ):
         """Return cumulative time spent in other as a fraction of our cumulative time"""
-        return self.child_map.get(other.key, 0)/float( self.time or 1 )
-        
+        if isinstance( other, FunctionInfo ):
+            return self.child_map.get(other.key, 0)/float( self.time or 1 )
+        if self.cumulative:
+            return other.cumulative/float(self.cumulative)
+        return other.cumulative
     # Internal APIs for Loader
     cdef record_call( self, uint32_t timestamp ):
         """Increment our internal call counter and first/last timestamp"""

@@ -34,7 +34,7 @@ cdef class Stack:
     
     cdef push( self, FunctionInfo function_info, uint32_t timestamp, long index )
     cdef pop( self, uint32_t timestamp, long index )
-    cdef line( self, uint16_t line, uint32_t timestamp )
+    cdef line( self, FunctionInfo function_info, uint32_t timestamp, uint16_t line )
     cdef record_context_switch( self, uint32_t timestamp )
     cdef annotation( self, uint32_t id, uint32_t timestamp, uint16_t lineno )
     cdef debug_stack( self )
